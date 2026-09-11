@@ -1,0 +1,135 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isPartner() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/partners/$(request.auth.uid));
+    }
+
+    function isOwnPartner(partnerId) {
+      return isPartner() && partnerId == request.auth.uid;
+    }
+
+    function isPendingBooking(data) {
+      return data.status in ['REQUESTED', 'SEARCHING', 'requested', 'searching'];
+    }
+
+    function isOwnedBooking(data) {
+      return isPartner() && data.partnerId == request.auth.uid;
+    }
+
+    function validStatusTransition(fromStatus, toStatus) {
+      return (
+        (fromStatus in ['REQUESTED', 'SEARCHING', 'requested', 'searching'] && toStatus == 'ACCEPTED') ||
+        (fromStatus == 'ACCEPTED' && toStatus in ['ARRIVING', 'CANCELLED']) ||
+        (fromStatus == 'ARRIVING' && toStatus in ['ARRIVED', 'CANCELLED']) ||
+        (fromStatus == 'ARRIVED' && toStatus in ['TRIP_STARTED', 'CANCELLED']) ||
+        (fromStatus == 'TRIP_STARTED' && toStatus == 'COMPLETED')
+      );
+    }
+
+    match /partners/{partnerId} {
+      allow create: if signedIn()
+        && request.auth.uid == partnerId
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.isOnline == false;
+
+      allow read: if signedIn() && request.auth.uid == partnerId;
+
+      allow update: if signedIn()
+        && request.auth.uid == partnerId
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid',
+          'name',
+          'email',
+          'rating',
+          'isOnline',
+          'location',
+          'latitude',
+          'longitude',
+          'lastSeenAt',
+          'updatedAt',
+          'createdAt',
+          'onlineStartedAt',
+          'onlineMinutesToday',
+          'onlineDateKey'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /bookings/{bookingId} {
+      // Partners can see unassigned live requests and their own assigned bookings.
+      allow read: if isPartner()
+        && (isPendingBooking(resource.data) || isOwnedBooking(resource.data));
+
+      allow create: if false;
+
+      // Acceptance is atomic and may only claim a still-pending booking.
+      allow update: if isPartner()
+        && (
+          (
+            isPendingBooking(resource.data)
+            && request.resource.data.partnerId == request.auth.uid
+            && request.resource.data.acceptedBy == request.auth.uid
+            && request.resource.data.status == 'ACCEPTED'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'partnerId',
+              'acceptedBy',
+              'acceptedAt',
+              'updatedAt'
+            ])
+          )
+          ||
+          (
+            resource.data.partnerId == request.auth.uid
+            && request.resource.data.partnerId == resource.data.partnerId
+            && request.resource.data.acceptedBy == resource.data.acceptedBy
+            && validStatusTransition(resource.data.status, request.resource.data.status)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'partnerId',
+              'acceptedBy',
+              'acceptedAt',
+              'updatedAt',
+              'arrivingAt',
+              'arrivedAt',
+              'tripStartedAt',
+              'completedAt'
+            ])
+          )
+          ||
+          (
+            resource.data.partnerId == request.auth.uid
+            && request.resource.data.partnerId == resource.data.partnerId
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'preTripFrontUrl',
+              'preTripBackUrl',
+              'preTripRightUrl',
+              'preTripLeftUrl',
+              'driverSelfieUrl',
+              'postTripFrontUrl',
+              'postTripBackUrl',
+              'postTripRightUrl',
+              'postTripLeftUrl',
+              'inspectionUpdatedAt'
+            ])
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
