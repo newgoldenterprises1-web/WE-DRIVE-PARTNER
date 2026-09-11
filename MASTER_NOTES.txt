@@ -1,0 +1,10 @@
+WE DRIVE PARTNER APP — MASTER FRONTEND FINAL
+
+Approved UI baseline: navy + white + gold premium partner UI.
+Screens: Splash, Login, OTP, Signup, Home, Bookings, Booking Detail, Earnings, Account, Verification, Journey History, Notifications, Support.
+
+IMPORTANT:
+This bundle contains the Flutter frontend source (lib/) and pubspec.yaml. Keep the existing Android/iOS platform folders of the user's Flutter project intact.
+If a platform folder is missing, run `flutter create .` once from the project root, then copy this bundle's lib/ and pubspec.yaml into the project.
+
+All visible primary navigation/actions in the supplied frontend are wired to local UI flows. External services such as Firebase, Google Maps, phone/SMS and backend APIs require their production credentials/integration before release.

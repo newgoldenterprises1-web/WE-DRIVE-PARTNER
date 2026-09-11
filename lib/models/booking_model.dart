@@ -1,0 +1,1 @@
+class BookingModel { final String id, customer, pickup, destination, date, time, status; final num earnings; const BookingModel({required this.id,required this.customer,required this.pickup,required this.destination,required this.date,required this.time,required this.status,required this.earnings}); }

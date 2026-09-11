@@ -1,0 +1,90 @@
+{
+  "project_info": {
+    "project_number": "35696955893",
+    "project_id": "we-drive-4315a",
+    "storage_bucket": "we-drive-4315a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:35696955893:android:e66408628c9e1b23aad0bc",
+        "android_client_info": {
+          "package_name": "com.example.we_drive_v2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "35696955893-df9erp46lp820sknis5tfrlh7csjb8ge.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.we_drive_v2",
+            "certificate_hash": "320cd2a7be350ee202e62bb74b7e04c466f6e95e"
+          }
+        },
+        {
+          "client_id": "35696955893-9pp0hh88t8rshb1ckde1ocl633rgfbgs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDfgLN0ArH1ZStJ7kResdM4oS3SWDVx22k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "35696955893-9pp0hh88t8rshb1ckde1ocl633rgfbgs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "35696955893-61vh6tvotom4shcopkloh10vne83781p.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.wedrive.weDrivePartner"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:35696955893:android:4e0a6058ac8a0cbdaad0bc",
+        "android_client_info": {
+          "package_name": "com.wedrive.partner.we_drive_partner"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "35696955893-9pp0hh88t8rshb1ckde1ocl633rgfbgs.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDfgLN0ArH1ZStJ7kResdM4oS3SWDVx22k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "35696955893-9pp0hh88t8rshb1ckde1ocl633rgfbgs.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "35696955893-61vh6tvotom4shcopkloh10vne83781p.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.wedrive.weDrivePartner"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
