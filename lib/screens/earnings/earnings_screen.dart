@@ -83,13 +83,13 @@ class EarningsScreen extends StatelessWidget {
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('bookings')
-            .where('status', isEqualTo: 'COMPLETED')
+            .where('partnerId', isEqualTo: partnerId)
             .snapshots(),
         builder: (context, snapshot) {
-          final allDocs = snapshot.data?.docs ?? [];
-          final docs = allDocs.where((doc) {
-            final data = doc.data();
-            return (data['partnerId'] ?? '').toString().trim() == partnerId;
+          final allAssignedDocs = snapshot.data?.docs ?? [];
+          final docs = allAssignedDocs.where((doc) {
+            final status = (doc.data()['status'] ?? '').toString().toUpperCase();
+            return status == 'COMPLETED';
           }).toList();
 
           docs.sort((a, b) {
