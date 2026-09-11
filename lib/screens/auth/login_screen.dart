@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/app_theme.dart';
 import '../home/home_screen.dart';
-import 'payment_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -103,9 +102,8 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (!mounted) return;
-      final targetScreen = isSignUp ? const PaymentScreen() : const HomeScreen();
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => targetScreen),
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
         (route) => false,
       );
     } on FirebaseAuthException catch (e) {
