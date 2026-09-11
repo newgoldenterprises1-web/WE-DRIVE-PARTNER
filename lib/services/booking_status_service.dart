@@ -15,17 +15,11 @@ class BookingStatusService {
     'CANCELLED': <String>{},
   };
 
-  static Future<bool> updateStatus({
-    required String bookingId,
-    required String nextStatus,
-  }) async {
+  static Future<bool> updateStatus({required String bookingId, required String nextStatus}) async {
     final user = FirebaseAuth.instance.currentUser;
     final normalizedId = bookingId.trim();
     final target = nextStatus.trim().toUpperCase();
-
-    if (user == null || normalizedId.isEmpty || target.isEmpty) {
-      return false;
-    }
+    if (user == null || normalizedId.isEmpty || target.isEmpty) return false;
 
     final firestore = FirebaseFirestore.instance;
     final ref = firestore.collection('bookings').doc(normalizedId);
@@ -34,93 +28,55 @@ class BookingStatusService {
     try {
       await firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(ref);
-        final partnerSnapshot = target == 'ACCEPTED'
-            ? await transaction.get(partnerRef)
-            : null;
+        final partnerSnapshot = await transaction.get(partnerRef);
+        if (!snapshot.exists) throw StateError('missing');
 
-        if (!snapshot.exists) {
-          throw StateError('missing');
-        }
-
+        final partnerData = partnerSnapshot.data() ?? <String, dynamic>{};
         final data = snapshot.data() ?? <String, dynamic>{};
         final current = (data['status'] ?? 'SEARCHING').toString().toUpperCase();
         final partnerId = (data['partnerId'] ?? '').toString().trim();
 
-        if (!_canTransition(current, target)) {
-          throw StateError('invalid_transition');
-        }
+        if (!_canTransition(current, target)) throw StateError('invalid_transition');
 
         if (target == 'ACCEPTED') {
-          final partnerData = partnerSnapshot?.data() ?? <String, dynamic>{};
-          if (partnerData['isOnline'] != true) {
-            throw StateError('offline');
-          }
+          final accountStatus = partnerData['accountStatus'];
+          if (accountStatus != null && accountStatus != 'ACTIVE') throw StateError('inactive');
+          if (partnerData['isOnline'] != true) throw StateError('offline');
+          if (partnerId.isNotEmpty && partnerId != user.uid) throw StateError('assigned');
 
-          if (partnerId.isNotEmpty && partnerId != user.uid) {
-            throw StateError('assigned');
-          }
-
-          transaction.set(
-            ref,
-            {
-              'status': 'ACCEPTED',
-              'partnerId': user.uid,
-              'acceptedBy': user.uid,
-              'acceptedAt': FieldValue.serverTimestamp(),
-              'updatedAt': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true),
-          );
+          transaction.set(ref, {
+            'status': 'ACCEPTED',
+            'partnerId': user.uid,
+            'acceptedBy': user.uid,
+            'acceptedAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
           return;
         }
 
-        if (partnerId != user.uid && target != 'CANCELLED') {
-          throw StateError('not_owner');
-        }
+        if (partnerId != user.uid && target != 'CANCELLED') throw StateError('not_owner');
+        if (target == 'CANCELLED' && partnerId.isNotEmpty && partnerId != user.uid) throw StateError('not_owner');
 
-        if (target == 'CANCELLED' && partnerId.isNotEmpty && partnerId != user.uid) {
-          throw StateError('not_owner');
-        }
-
-        final update = <String, dynamic>{
-          'status': target,
-          'updatedAt': FieldValue.serverTimestamp(),
-        };
-
+        final update = <String, dynamic>{'status': target, 'updatedAt': FieldValue.serverTimestamp()};
         switch (target) {
-          case 'ARRIVING':
-            update['arrivingAt'] = FieldValue.serverTimestamp();
-            break;
-          case 'ARRIVED':
-            update['arrivedAt'] = FieldValue.serverTimestamp();
-            break;
-          case 'TRIP_STARTED':
-            update['tripStartedAt'] = FieldValue.serverTimestamp();
-            break;
-          case 'COMPLETED':
-            update['completedAt'] = FieldValue.serverTimestamp();
-            break;
+          case 'ARRIVING': update['arrivingAt'] = FieldValue.serverTimestamp(); break;
+          case 'ARRIVED': update['arrivedAt'] = FieldValue.serverTimestamp(); break;
+          case 'TRIP_STARTED': update['tripStartedAt'] = FieldValue.serverTimestamp(); break;
+          case 'COMPLETED': update['completedAt'] = FieldValue.serverTimestamp(); break;
           case 'CANCELLED':
             update['cancelledBy'] = user.uid;
             update['cancelledAt'] = FieldValue.serverTimestamp();
             break;
         }
-
         transaction.set(ref, update, SetOptions(merge: true));
       });
-
       return true;
     } catch (_) {
       return false;
     }
   }
 
-  static bool canTransition(String currentStatus, String nextStatus) {
-    return _canTransition(
-      currentStatus.trim().toUpperCase(),
-      nextStatus.trim().toUpperCase(),
-    );
-  }
+  static bool canTransition(String currentStatus, String nextStatus) => _canTransition(currentStatus.trim().toUpperCase(), nextStatus.trim().toUpperCase());
 
   static bool _canTransition(String currentStatus, String nextStatus) {
     final allowed = allowedTransitions[currentStatus];
