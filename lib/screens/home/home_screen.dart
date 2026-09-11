@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../data/app_data.dart';
+import '../../services/partner_presence_service.dart';
 import '../../models/booking.dart';
 import '../bookings/bookings_screen.dart';
 import '../earnings/earnings_screen.dart';
@@ -21,7 +22,53 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int selectedTab = 0;
-  bool online = true;
+  bool online = false;
+  bool presenceLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _restorePartnerPresence();
+  }
+
+  Future<void> _restorePartnerPresence() async {
+    final saved = await PartnerPresenceService.getOnlineStatus();
+    if (!mounted) return;
+    setState(() {
+      online = saved ?? false;
+      presenceLoading = false;
+    });
+  }
+
+  Future<void> _setPartnerPresence(bool value) async {
+    if (presenceLoading) return;
+
+    final previous = online;
+    setState(() {
+      online = value;
+      presenceLoading = true;
+    });
+
+    final success = await PartnerPresenceService.setOnline(value);
+    if (!mounted) return;
+
+    if (!success) {
+      setState(() {
+        online = previous;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update availability. Please try again.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
+    setState(() {
+      presenceLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -368,11 +415,7 @@ class _HomeScreenState extends State<HomeScreen> {
             activeTrackColor: Colors.white30,
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: Colors.black26,
-            onChanged: (value) {
-              setState(() {
-                online = value;
-              });
-            },
+            onChanged: presenceLoading ? null : _setPartnerPresence,
           ),
         ],
       ),
