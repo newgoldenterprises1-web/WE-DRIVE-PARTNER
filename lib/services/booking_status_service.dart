@@ -27,11 +27,17 @@ class BookingStatusService {
       return false;
     }
 
-    final ref = FirebaseFirestore.instance.collection('bookings').doc(normalizedId);
+    final firestore = FirebaseFirestore.instance;
+    final ref = firestore.collection('bookings').doc(normalizedId);
+    final partnerRef = firestore.collection('partners').doc(user.uid);
 
     try {
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
+      await firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(ref);
+        final partnerSnapshot = target == 'ACCEPTED'
+            ? await transaction.get(partnerRef)
+            : null;
+
         if (!snapshot.exists) {
           throw StateError('missing');
         }
@@ -45,6 +51,11 @@ class BookingStatusService {
         }
 
         if (target == 'ACCEPTED') {
+          final partnerData = partnerSnapshot?.data() ?? <String, dynamic>{};
+          if (partnerData['isOnline'] != true) {
+            throw StateError('offline');
+          }
+
           if (partnerId.isNotEmpty && partnerId != user.uid) {
             throw StateError('assigned');
           }
