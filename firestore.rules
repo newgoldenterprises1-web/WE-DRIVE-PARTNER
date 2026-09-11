@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isPartner() {
+      return signedIn() && exists(/databases/$(database)/documents/partners/$(request.auth.uid));
+    }
+    function isActivePartner() {
+      return isPartner() && (
+        !('accountStatus' in get(/databases/$(database)/documents/partners/$(request.auth.uid)).data)
+        || get(/databases/$(database)/documents/partners/$(request.auth.uid)).data.accountStatus == 'ACTIVE'
+      );
+    }
+    function isPendingBooking(data) {
+      return data.status in ['REQUESTED','SEARCHING','requested','searching'];
+    }
+    function isOwnedBooking(data) { return isActivePartner() && data.partnerId == request.auth.uid; }
+    function validStatusTransition(fromStatus, toStatus) {
+      return (
+        (fromStatus in ['REQUESTED','SEARCHING','requested','searching'] && toStatus in ['ACCEPTED','CANCELLED']) ||
+        (fromStatus == 'ACCEPTED' && toStatus in ['ARRIVING','CANCELLED']) ||
+        (fromStatus == 'ARRIVING' && toStatus in ['ARRIVED','CANCELLED']) ||
+        (fromStatus == 'ARRIVED' && toStatus in ['TRIP_STARTED','CANCELLED']) ||
+        (fromStatus == 'TRIP_STARTED' && toStatus == 'COMPLETED')
+      );
+    }
+    match /partners/{partnerId} {
+      allow create: if signedIn() && request.auth.uid == partnerId && request.resource.data.uid == request.auth.uid && (!('isOnline' in request.resource.data) || request.resource.data.isOnline == false);
+      allow read: if signedIn() && request.auth.uid == partnerId;
+      allow update: if signedIn() && request.auth.uid == partnerId && resource.data.uid == request.auth.uid && request.resource.data.uid == resource.data.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid','name','email','phone','isOnline','location','latitude','longitude','lastSeenAt','updatedAt','createdAt','onlineStartedAt','onlineMinutesToday','onlineDateKey']);
+      allow delete: if false;
+    }
+    match /bookings/{bookingId} {
+      allow read: if isActivePartner() && (isPendingBooking(resource.data) || isOwnedBooking(resource.data));
+      allow create: if false;
+      allow update: if isActivePartner() && (
+        (isPendingBooking(resource.data) && request.resource.data.partnerId == request.auth.uid && request.resource.data.acceptedBy == request.auth.uid && request.resource.data.status == 'ACCEPTED' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','partnerId','acceptedBy','acceptedAt','updatedAt']))
+        ||
+        (isPendingBooking(resource.data) && request.resource.data.status == 'CANCELLED' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','cancelledBy','cancelledAt','updatedAt']) && request.resource.data.cancelledBy == request.auth.uid)
+        ||
+        (resource.data.partnerId == request.auth.uid && request.resource.data.partnerId == resource.data.partnerId && request.resource.data.acceptedBy == resource.data.acceptedBy && validStatusTransition(resource.data.status, request.resource.data.status) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','partnerId','acceptedBy','acceptedAt','updatedAt','arrivingAt','arrivedAt','tripStartedAt','completedAt','cancelledBy','cancelledAt']))
+        ||
+        (resource.data.partnerId == request.auth.uid && request.resource.data.partnerId == resource.data.partnerId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['preTripFrontUrl','preTripBackUrl','preTripRightUrl','preTripLeftUrl','driverSelfieUrl','postTripFrontUrl','postTripBackUrl','postTripRightUrl','postTripLeftUrl','inspectionUpdatedAt']))
+      );
+      allow delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
