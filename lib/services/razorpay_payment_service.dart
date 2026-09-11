@@ -11,6 +11,12 @@ class RazorpayPaymentService {
 
   static final RazorpayPaymentService instance = RazorpayPaymentService._();
 
+  // Development mode: simulates a successful payment locally. It does not
+  // charge money and never changes Premium/onboarding status in Firestore.
+  // Set to false only after the server-side Razorpay Test Mode order and
+  // verification endpoints are configured.
+  static const bool testMode = true;
+
   static const String _functionBaseUrl =
       'https://asia-south1-we-drive-4315a.cloudfunctions.net';
 
@@ -18,6 +24,8 @@ class RazorpayPaymentService {
   Completer<bool>? _paymentCompleter;
   String? _activeOrderId;
   String? _activePlan;
+
+  bool get isTestMode => testMode;
 
   Future<bool> payPlan({required String plan}) async {
     final normalizedPlan = plan.trim().toUpperCase();
@@ -28,6 +36,12 @@ class RazorpayPaymentService {
 
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return false;
+
+    if (testMode) {
+      // Safe local simulation only. No Firestore activation is performed.
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      return true;
+    }
 
     final token = await user.getIdToken();
     if (token == null || token.isEmpty) return false;
@@ -90,7 +104,9 @@ class RazorpayPaymentService {
 
     final data = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw StateError((data['error'] ?? 'Unable to create payment order').toString());
+      throw StateError(
+        (data['error'] ?? 'Unable to create payment order').toString(),
+      );
     }
     return data;
   }
@@ -105,7 +121,9 @@ class RazorpayPaymentService {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) throw StateError('Please sign in again.');
       final token = await user.getIdToken();
-      if (token == null || token.isEmpty) throw StateError('Missing authentication token.');
+      if (token == null || token.isEmpty) {
+        throw StateError('Missing authentication token.');
+      }
 
       final paymentId = (response.paymentId ?? '').trim();
       final returnedOrderId = (response.orderId ?? '').trim();
@@ -128,8 +146,12 @@ class RazorpayPaymentService {
         }),
       );
       final data = _decode(httpResponse);
-      if (httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 || data['ok'] != true) {
-        throw StateError((data['error'] ?? 'Payment verification failed').toString());
+      if (httpResponse.statusCode < 200 ||
+          httpResponse.statusCode >= 300 ||
+          data['ok'] != true) {
+        throw StateError(
+          (data['error'] ?? 'Payment verification failed').toString(),
+        );
       }
 
       if (!completer.isCompleted) completer.complete(true);
@@ -140,7 +162,9 @@ class RazorpayPaymentService {
   }
 
   void _handleFailure(PaymentFailureResponse response) {
-    debugPrint('Razorpay checkout error: ${response.code} ${response.message}');
+    debugPrint(
+      'Razorpay checkout error: ${response.code} ${response.message}',
+    );
     final completer = _paymentCompleter;
     if (completer != null && !completer.isCompleted) completer.complete(false);
   }
@@ -152,9 +176,7 @@ class RazorpayPaymentService {
   Map<String, dynamic> _decode(http.Response response) {
     if (response.body.isEmpty) return <String, dynamic>{};
     final decoded = jsonDecode(response.body);
-    return decoded is Map<String, dynamic>
-        ? decoded
-        : <String, dynamic>{};
+    return decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
   }
 
   void _disposeRazorpay() {
