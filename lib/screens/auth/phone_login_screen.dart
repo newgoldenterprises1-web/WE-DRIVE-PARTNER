@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../services/partner_plan_service.dart';
 import '../../services/phone_auth_service.dart';
 import '../../theme/app_theme.dart';
+import 'onboarding_payment_screen.dart';
 import '../home/home_screen.dart';
 
 class PhoneLoginScreen extends StatefulWidget {
@@ -85,7 +86,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       if (user == null) return;
       await ensurePartner(user, allowCreate: link);
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeScreen()), (_) => false);
+      await _routeAfterAuth(user);
     }
     if (link) {
       await PhoneAuthService.verifyAndLinkPhone(phoneNumber: normalizedPhone, onCodeSent: sent, onVerified: verified, onError: failed);
@@ -106,11 +107,31 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       }
       final user = c.user!;
       await ensurePartner(user, allowCreate: register);
-      if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeScreen()), (_) => false);
+      await _routeAfterAuth(user);
     } on FirebaseAuthException catch (e) { message(e.message ?? 'Invalid OTP.', error: true); }
     catch (e) { message(e.toString().contains('registered') ? 'This mobile number is not registered as a WE DRIVE partner.' : 'OTP verification failed: $e', error: true); }
     finally { if (mounted) setState(() => loading = false); }
+  }
+
+  Future<void> _routeAfterAuth(User user) async {
+    final snap = await FirebaseFirestore.instance.collection('partners').doc(user.uid).get();
+    final data = snap.data() ?? <String, dynamic>{};
+    final paymentStatus = (data['onboardingPaymentStatus'] ?? 'PENDING').toString().toUpperCase();
+    final accountStatus = (data['accountStatus'] ?? '').toString().toUpperCase();
+
+    if (!mounted) return;
+    if (paymentStatus != 'PAID' || accountStatus == 'PENDING_ONBOARDING_FEE') {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const OnboardingPaymentScreen()),
+        (_) => false,
+      );
+      return;
+    }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const HomeScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> ensurePartner(User user, {required bool allowCreate}) async {
