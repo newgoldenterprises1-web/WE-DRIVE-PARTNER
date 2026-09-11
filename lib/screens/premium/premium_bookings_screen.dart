@@ -149,7 +149,7 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text('PREMIUM PARTNER', style: TextStyle(color: AppColors.gold, fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 1.2)),
                       SizedBox(height: 3),
-                      Text('High-value corporate rides • 90% share', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
+                      Text('High-value corporate rides • 85% share', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
                     ])),
                   ]),
                 ),
@@ -175,13 +175,13 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
           SizedBox(height: 14),
           Text('Become a Premium Chauffeur', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
           SizedBox(height: 8),
-          Text('Pay the Premium Drive fee to unlock exclusive corporate bookings and the 90% premium earnings tier.', style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4)),
+          Text('Pay the Premium Drive fee to unlock exclusive corporate bookings. Driver earnings remain at the standard 85% share.', style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4)),
         ])),
         const SizedBox(height: 16),
         AppCard(child: Column(children: [
           _benefit(Icons.business_center_rounded, 'Premium corporate bookings'),
           _benefit(Icons.bolt_rounded, 'Priority allocation opportunities'),
-          _benefit(Icons.payments_rounded, '90% driver earnings share'),
+          _benefit(Icons.payments_rounded, '85% driver earnings share'),
           const Divider(height: 28),
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [Text('Premium Drive fee', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w800)), Text('₹699', style: TextStyle(color: AppColors.gold, fontSize: 22, fontWeight: FontWeight.w900))]),
         ])),
@@ -210,7 +210,7 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
     onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => PremiumBookingDetailScreen(booking: booking))),
     color: const Color(0xFFFEFBF2),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [const Icon(Icons.workspace_premium_rounded, color: AppColors.gold, size: 20), const SizedBox(width: 6), const Text('PREMIUM BOOKING', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w900, fontSize: 12)), const Spacer(), const Text('90% SHARE', style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.w900))]),
+      Row(children: [const Icon(Icons.workspace_premium_rounded, color: AppColors.gold, size: 20), const SizedBox(width: 6), const Text('PREMIUM BOOKING', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w900, fontSize: 12)), const Spacer(), const Text('85% SHARE', style: TextStyle(color: AppColors.green, fontSize: 10, fontWeight: FontWeight.w900))]),
       const SizedBox(height: 14),
       Row(children: [
         Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)), child: const Icon(Icons.person_rounded, color: AppColors.navy)),
