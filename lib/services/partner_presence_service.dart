@@ -14,6 +14,19 @@ class PartnerPresenceService {
     return _firestore.collection('partners').doc(uid);
   }
 
+  static Future<bool?> getOnlineStatus() async {
+    final ref = _partnerRef();
+    if (ref == null) return null;
+
+    try {
+      final snapshot = await ref.get();
+      if (!snapshot.exists) return false;
+      return snapshot.data()?['isOnline'] == true;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<bool> setOnline(bool online, {Position? position}) async {
     final ref = _partnerRef();
     if (ref == null) return false;
