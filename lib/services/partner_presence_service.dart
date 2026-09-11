@@ -11,7 +11,6 @@ class PartnerPresenceService {
 
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-
   static Timer? _locationTimer;
   static bool _locationUpdateInFlight = false;
   static const Duration stalePresenceWindow = Duration(minutes: 5);
@@ -31,27 +30,24 @@ class PartnerPresenceService {
   static Future<bool?> getOnlineStatus() async {
     final ref = _partnerRef();
     if (ref == null) return null;
-
     try {
       final snapshot = await ref.get();
       if (!snapshot.exists) return false;
-
       final data = snapshot.data() ?? <String, dynamic>{};
+      if (data['accountStatus'] != 'ACTIVE') {
+        _stopLocationTracking();
+        return false;
+      }
       final isOnline = data['isOnline'] == true;
       if (!isOnline) {
         _stopLocationTracking();
         return false;
       }
-
       final lastSeen = data['lastSeenAt'];
-      if (lastSeen is Timestamp) {
-        final age = DateTime.now().difference(lastSeen.toDate());
-        if (age > stalePresenceWindow) {
-          await setOfflineBestEffort();
-          return false;
-        }
+      if (lastSeen is Timestamp && DateTime.now().difference(lastSeen.toDate()) > stalePresenceWindow) {
+        await setOfflineBestEffort();
+        return false;
       }
-
       _startLocationTracking();
       return true;
     } catch (_) {
@@ -62,8 +58,11 @@ class PartnerPresenceService {
   static Future<bool> setOnline(bool online, {Position? position}) async {
     final ref = _partnerRef();
     if (ref == null) return false;
-
     try {
+      final current = await ref.get();
+      final currentData = current.data() ?? <String, dynamic>{};
+      if (online && currentData['accountStatus'] != 'ACTIVE') return false;
+
       Position? resolvedPosition = position;
       if (online && resolvedPosition == null) {
         resolvedPosition = await LocationService.getCurrentPosition();
@@ -75,23 +74,17 @@ class PartnerPresenceService {
         'updatedAt': FieldValue.serverTimestamp(),
         'lastSeenAt': FieldValue.serverTimestamp(),
       };
-
       if (online) {
-        final current = await ref.get();
-        final currentData = current.data() ?? <String, dynamic>{};
-        final currentDateKey = (currentData['onlineDateKey'] ?? '').toString();
         final todayKey = _dateKey();
+        final currentDateKey = (currentData['onlineDateKey'] ?? '').toString();
         if (currentDateKey != todayKey) {
           data['onlineMinutesToday'] = 0;
           data['onlineDateKey'] = todayKey;
         }
         data['onlineStartedAt'] = FieldValue.serverTimestamp();
       } else {
-        final current = await ref.get();
-        final currentData = current.data() ?? <String, dynamic>{};
         final started = currentData['onlineStartedAt'];
-        final previousMinutes = currentData['onlineMinutesToday'];
-        var minutes = previousMinutes is num ? previousMinutes.toInt() : 0;
+        var minutes = currentData['onlineMinutesToday'] is num ? (currentData['onlineMinutesToday'] as num).toInt() : 0;
         if (started is Timestamp) {
           final elapsed = DateTime.now().difference(started.toDate()).inMinutes;
           if (elapsed > 0) minutes += elapsed;
@@ -102,22 +95,13 @@ class PartnerPresenceService {
       }
 
       if (resolvedPosition != null) {
-        data['location'] = GeoPoint(
-          resolvedPosition.latitude,
-          resolvedPosition.longitude,
-        );
+        data['location'] = GeoPoint(resolvedPosition.latitude, resolvedPosition.longitude);
         data['latitude'] = resolvedPosition.latitude;
         data['longitude'] = resolvedPosition.longitude;
       }
 
       await ref.set(data, SetOptions(merge: true));
-
-      if (online) {
-        _startLocationTracking();
-      } else {
-        _stopLocationTracking();
-      }
-
+      if (online) _startLocationTracking(); else _stopLocationTracking();
       return true;
     } catch (_) {
       return false;
@@ -127,7 +111,6 @@ class PartnerPresenceService {
   static Future<bool> refreshLocation(Position position) async {
     final ref = _partnerRef();
     if (ref == null) return false;
-
     try {
       await ref.set({
         'isOnline': true,
@@ -145,12 +128,8 @@ class PartnerPresenceService {
 
   static void _startLocationTracking() {
     if (_locationTimer?.isActive == true) return;
-
     _updateLocationNow();
-    _locationTimer = Timer.periodic(
-      const Duration(seconds: 60),
-      (_) => _updateLocationNow(),
-    );
+    _locationTimer = Timer.periodic(const Duration(seconds: 60), (_) => _updateLocationNow());
   }
 
   static void _stopLocationTracking() {
@@ -162,7 +141,6 @@ class PartnerPresenceService {
     if (_locationUpdateInFlight) return;
     final ref = _partnerRef();
     if (ref == null) return;
-
     _locationUpdateInFlight = true;
     try {
       final isOnline = await getOnlineStatusWithoutStartingTracking();
@@ -170,13 +148,9 @@ class PartnerPresenceService {
         _stopLocationTracking();
         return;
       }
-
       final position = await LocationService.getCurrentPosition();
-      if (position == null) return;
-
-      await refreshLocation(position);
+      if (position != null) await refreshLocation(position);
     } catch (_) {
-      // Location updates are best-effort. The next tick retries.
     } finally {
       _locationUpdateInFlight = false;
     }
@@ -185,11 +159,11 @@ class PartnerPresenceService {
   static Future<bool?> getOnlineStatusWithoutStartingTracking() async {
     final ref = _partnerRef();
     if (ref == null) return null;
-
     try {
       final snapshot = await ref.get();
       if (!snapshot.exists) return false;
-      return snapshot.data()?['isOnline'] == true;
+      final data = snapshot.data() ?? <String, dynamic>{};
+      return data['accountStatus'] == 'ACTIVE' && data['isOnline'] == true;
     } catch (_) {
       return null;
     }
@@ -199,18 +173,15 @@ class PartnerPresenceService {
     final ref = _partnerRef();
     _stopLocationTracking();
     if (ref == null) return;
-
     try {
       final current = await ref.get();
       final currentData = current.data() ?? <String, dynamic>{};
       final started = currentData['onlineStartedAt'];
-      final previousMinutes = currentData['onlineMinutesToday'];
-      var minutes = previousMinutes is num ? previousMinutes.toInt() : 0;
+      var minutes = currentData['onlineMinutesToday'] is num ? (currentData['onlineMinutesToday'] as num).toInt() : 0;
       if (started is Timestamp) {
         final elapsed = DateTime.now().difference(started.toDate()).inMinutes;
         if (elapsed > 0) minutes += elapsed;
       }
-
       await ref.set({
         'isOnline': false,
         'onlineMinutesToday': minutes,
@@ -219,8 +190,6 @@ class PartnerPresenceService {
         'lastSeenAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-    } catch (_) {
-      // Do not block app shutdown/navigation because presence is best-effort.
-    }
+    } catch (_) {}
   }
 }
