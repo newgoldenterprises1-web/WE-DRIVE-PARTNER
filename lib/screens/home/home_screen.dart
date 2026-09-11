@@ -75,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       homeBody(),
-      BookingsScreen(bookings: AppData.bookings),
+      BookingsScreen(bookings: AppData.bookings, partnerOnline: online),
       const EarningsScreen(),
       const AccountScreen(),
     ];
@@ -134,11 +134,30 @@ class _HomeScreenState extends State<HomeScreen> {
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('bookings')
-            .orderBy('createdAt', descending: true)
-            .limit(1)
+            .where('status', whereIn: const ['REQUESTED', 'SEARCHING'])
             .snapshots(),
         builder: (context, snapshot) {
-          final docs = snapshot.data?.docs ?? [];
+          final allDocs = snapshot.data?.docs ?? [];
+          final docs = online
+              ? (allDocs.where((doc) {
+                  final data = doc.data();
+                  final partnerId = (data['partnerId'] ?? '').toString().trim();
+                  return partnerId.isEmpty;
+                }).toList()
+                ..sort((a, b) {
+                  final aCreated = a.data()['createdAt'];
+                  final bCreated = b.data()['createdAt'];
+                  if (aCreated is Timestamp && bCreated is Timestamp) {
+                    return bCreated.compareTo(aCreated);
+                  }
+                  if (aCreated is Timestamp) return -1;
+                  if (bCreated is Timestamp) return 1;
+                  return 0;
+                }))
+              : <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+          final visibleDocs = docs.take(5).toList();
+
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
             children: [
@@ -261,7 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              if (docs.isEmpty)
+              if (visibleDocs.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(28),
                   decoration: BoxDecoration(
@@ -287,7 +306,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 )
               else
-                ...docs.map((doc) {
+                ...visibleDocs.map((doc) {
                   final data = doc.data();
                   final booking = Booking(
                     id: doc.id,
