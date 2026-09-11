@@ -43,9 +43,20 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
   Future<void> _startPremiumPayment() async {
     if (processing) return;
     setState(() => processing = true);
-    final success = await RazorpayPaymentService.instance.payPlan(plan: 'PREMIUM');
+    final paymentService = RazorpayPaymentService.instance;
+    final success = await paymentService.payPlan(plan: 'PREMIUM');
     if (!mounted) return;
-    if (success) {
+
+    if (success && paymentService.isTestMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'TEST PAYMENT SUCCESSFUL • No real money charged. Premium is still locked until server verification.',
+          ),
+          backgroundColor: Colors.blueGrey,
+        ),
+      );
+    } else if (success) {
       await _loadPlan();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -54,9 +65,13 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Payment was not completed or could not be verified.'), backgroundColor: Colors.orange),
+        const SnackBar(
+          content: Text('Payment was not completed or could not be verified.'),
+          backgroundColor: Colors.orange,
+        ),
       );
     }
+
     if (mounted) setState(() => processing = false);
   }
 
@@ -173,7 +188,13 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
         const SizedBox(height: 18),
         SizedBox(width: double.infinity, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), onPressed: processing ? null : _startPremiumPayment, child: processing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('PAY ₹699 & UPGRADE', style: TextStyle(fontWeight: FontWeight.w900)))),
         const SizedBox(height: 10),
-        const Text('Premium bookings remain locked until the Premium Drive payment is verified and the partner account is marked Premium.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
+        Text(
+          RazorpayPaymentService.testMode
+              ? 'TEST MODE: no real charge and no Premium activation until server verification is connected.'
+              : 'Premium bookings remain locked until the Premium Drive payment is verified and the partner account is marked Premium.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4),
+        ),
       ]),
     );
   }
