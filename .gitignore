@@ -5,3 +5,8 @@ build/
 .idea/
 .vscode/
 *.iml
+
+# Android signing secrets / keystores
+android/key.properties
+android/*.jks
+android/*.keystore
