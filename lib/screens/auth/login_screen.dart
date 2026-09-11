@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../theme/app_theme.dart';
@@ -12,11 +13,11 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  bool isSignUp = false; // false = Login, true = Register
-  final _emailController = TextEditingController(text: 'admin@wedrive.com');
+  bool isSignUp = false;
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
-  
+
   bool isLoading = false;
 
   @override
@@ -37,6 +38,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> handleEmailAuth() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
+    final name = _nameController.text.trim();
 
     if (email.isEmpty || !email.contains('@')) {
       showMessage('Please enter a valid email address.');
@@ -48,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (isSignUp && _nameController.text.trim().isEmpty) {
+    if (isSignUp && name.isEmpty) {
       showMessage('Please enter your full name for registration.');
       return;
     }
@@ -56,18 +58,48 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => isLoading = true);
 
     try {
+      UserCredential credential;
+
       if (isSignUp) {
-        // Register new user
-        await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
           email: email,
           password: password,
+        );
+
+        final user = credential.user;
+        if (user == null) {
+          throw StateError('Account creation did not return a user.');
+        }
+
+        await user.updateDisplayName(name);
+        await FirebaseFirestore.instance.collection('partners').doc(user.uid).set(
+          {
+            'uid': user.uid,
+            'name': name,
+            'email': email,
+            'isOnline': false,
+            'createdAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
         );
       } else {
-        // Sign in existing user
-        await FirebaseAuth.instance.signInWithEmailAndPassword(
+        credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
           email: email,
           password: password,
         );
+
+        final user = credential.user;
+        if (user != null) {
+          await FirebaseFirestore.instance.collection('partners').doc(user.uid).set(
+            {
+              'uid': user.uid,
+              'email': email,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
+        }
       }
 
       if (!mounted) return;
@@ -77,7 +109,8 @@ class _LoginScreenState extends State<LoginScreen> {
         (route) => false,
       );
     } on FirebaseAuthException catch (e) {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
+
       String message = 'Authentication failed';
       if (e.code == 'user-not-found' || e.code == 'invalid-credential') {
         message = 'No user found for that email or wrong password.';
@@ -90,7 +123,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       showMessage(message);
     } catch (e) {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
       showMessage('Error: ${e.toString()}');
     }
   }
@@ -106,7 +139,6 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Top App Branding Header
                 Center(
                   child: Column(
                     children: [
@@ -144,8 +176,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
-
-                // Main Card Container
                 Container(
                   padding: const EdgeInsets.all(22),
                   decoration: BoxDecoration(
@@ -163,7 +193,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Mode Switcher Tabs (Login vs Sign Up)
                       Container(
                         decoration: BoxDecoration(
                           color: const Color(0xFFF7F9FC),
@@ -218,14 +247,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-
                       Text(
                         isSignUp ? 'Create Partner Account' : 'Welcome Back',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color: AppColors.navy,
-                        ),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.navy),
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -235,7 +259,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.3),
                       ),
                       const SizedBox(height: 20),
-
                       if (isSignUp) ...[
                         TextField(
                           controller: _nameController,
@@ -252,7 +275,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
                       ],
-                      
                       TextField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
@@ -267,7 +289,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-
                       TextField(
                         controller: _passwordController,
                         obscureText: true,
@@ -282,7 +303,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
