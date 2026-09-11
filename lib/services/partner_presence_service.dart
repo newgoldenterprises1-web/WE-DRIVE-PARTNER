@@ -21,6 +21,12 @@ class PartnerPresenceService {
     return _firestore.collection('partners').doc(uid);
   }
 
+  static String _dateKey([DateTime? date]) {
+    final value = date ?? DateTime.now();
+    final local = value.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+  }
+
   static Future<bool?> getOnlineStatus() async {
     final ref = _partnerRef();
     if (ref == null) return null;
@@ -56,6 +62,31 @@ class PartnerPresenceService {
         'updatedAt': FieldValue.serverTimestamp(),
         'lastSeenAt': FieldValue.serverTimestamp(),
       };
+
+      if (online) {
+        final current = await ref.get();
+        final currentData = current.data() ?? <String, dynamic>{};
+        final currentDateKey = (currentData['onlineDateKey'] ?? '').toString();
+        final todayKey = _dateKey();
+        if (currentDateKey != todayKey) {
+          data['onlineMinutesToday'] = 0;
+          data['onlineDateKey'] = todayKey;
+        }
+        data['onlineStartedAt'] = FieldValue.serverTimestamp();
+      } else {
+        final current = await ref.get();
+        final currentData = current.data() ?? <String, dynamic>{};
+        final started = currentData['onlineStartedAt'];
+        final previousMinutes = currentData['onlineMinutesToday'];
+        var minutes = previousMinutes is num ? previousMinutes.toInt() : 0;
+        if (started is Timestamp) {
+          final elapsed = DateTime.now().difference(started.toDate()).inMinutes;
+          if (elapsed > 0) minutes += elapsed;
+        }
+        data['onlineMinutesToday'] = minutes;
+        data['onlineDateKey'] = _dateKey();
+        data['onlineStartedAt'] = FieldValue.delete();
+      }
 
       if (resolvedPosition != null) {
         data['location'] = GeoPoint(
@@ -132,8 +163,7 @@ class PartnerPresenceService {
 
       await refreshLocation(position);
     } catch (_) {
-      // Location updates are best-effort. The partner remains online if a
-      // transient GPS/network failure occurs; the next tick will retry.
+      // Location updates are best-effort. The next tick retries.
     } finally {
       _locationUpdateInFlight = false;
     }
@@ -158,8 +188,21 @@ class PartnerPresenceService {
     if (ref == null) return;
 
     try {
+      final current = await ref.get();
+      final currentData = current.data() ?? <String, dynamic>{};
+      final started = currentData['onlineStartedAt'];
+      final previousMinutes = currentData['onlineMinutesToday'];
+      var minutes = previousMinutes is num ? previousMinutes.toInt() : 0;
+      if (started is Timestamp) {
+        final elapsed = DateTime.now().difference(started.toDate()).inMinutes;
+        if (elapsed > 0) minutes += elapsed;
+      }
+
       await ref.set({
         'isOnline': false,
+        'onlineMinutesToday': minutes,
+        'onlineDateKey': _dateKey(),
+        'onlineStartedAt': FieldValue.delete(),
         'lastSeenAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
