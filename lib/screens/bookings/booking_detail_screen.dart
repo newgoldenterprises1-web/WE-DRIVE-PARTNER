@@ -217,10 +217,11 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   }) async {
     for (int i = 0; i < retries; i++) {
       try {
-        final fileName = '${widget.booking.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final fileName = '${DateTime.now().millisecondsSinceEpoch}.jpg';
         final ref = FirebaseStorage.instance
             .ref()
             .child('inspections')
+            .child(widget.booking.id)
             .child(folderName)
             .child(fileName);
 
