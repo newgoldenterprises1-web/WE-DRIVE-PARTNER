@@ -7,10 +7,12 @@ import 'booking_detail_screen.dart';
 
 class BookingsScreen extends StatelessWidget {
   final List<Booking>? bookings;
+  final bool partnerOnline;
 
   const BookingsScreen({
     super.key,
     this.bookings,
+    this.partnerOnline = false,
   });
 
   @override
@@ -51,7 +53,7 @@ class BookingsScreen extends StatelessWidget {
             final partnerId = (data['partnerId'] ?? '').toString().trim();
 
             if ((status == 'REQUESTED' || status == 'SEARCHING') && partnerId.isEmpty) {
-              return true;
+              return partnerOnline;
             }
 
             return status == 'ACCEPTED' &&
