@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../data/app_data.dart';
@@ -69,6 +70,46 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       presenceLoading = false;
     });
+  }
+
+  double _numericFare(Map<String, dynamic> data) {
+    final candidates = [data['fare'], data['estimatedFare']];
+    for (final candidate in candidates) {
+      if (candidate is num) return candidate.toDouble();
+    }
+
+    final display = data['fareDisplay'];
+    if (display != null) {
+      final match = RegExp(r'[0-9]+(?:\.[0-9]+)?').firstMatch(display.toString());
+      if (match != null) {
+        return double.tryParse(match.group(0)!) ?? 0;
+      }
+    }
+    return 0;
+  }
+
+  String _formatOnlineHours(Map<String, dynamic> partnerData) {
+    var minutes = 0;
+    final stored = partnerData['onlineMinutesToday'];
+    if (stored is num) minutes = stored.toInt();
+
+    final started = partnerData['onlineStartedAt'];
+    if (partnerData['isOnline'] == true && started is Timestamp) {
+      final elapsed = DateTime.now().difference(started.toDate()).inMinutes;
+      if (elapsed > 0) minutes += elapsed;
+    }
+
+    final hours = minutes ~/ 60;
+    final remaining = minutes % 60;
+    return '${hours}h ${remaining.toString().padLeft(2, '0')}m';
+  }
+
+  bool _isToday(Map<String, dynamic> data) {
+    final value = data['completedAt'] ?? data['updatedAt'];
+    if (value is! Timestamp) return false;
+    final date = value.toDate().toLocal();
+    final now = DateTime.now();
+    return date.year == now.year && date.month == now.month && date.day == now.day;
   }
 
   @override
@@ -157,174 +198,212 @@ class _HomeScreenState extends State<HomeScreen> {
               : <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
           final visibleDocs = docs.take(5).toList();
+          final partnerId = FirebaseAuth.instance.currentUser?.uid;
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: AppColors.navy.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.local_taxi_rounded, color: AppColors.navy, size: 20),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'WE DRIVE',
-                          style: TextStyle(
-                            color: AppColors.navy,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(color: Colors.grey.shade200),
-                      ),
-                    ),
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => const NotificationsScreen(),
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.notifications_none_rounded, color: AppColors.navy, size: 22),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    style: IconButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: BorderSide(color: Colors.grey.shade200),
-                      ),
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        selectedTab = 3;
-                      });
-                    },
-                    icon: const Icon(Icons.person_outline_rounded, color: AppColors.navy, size: 22),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Welcome, Partner',
-                style: TextStyle(
-                  color: AppColors.navy,
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Stay ready. Great journeys start here.',
-                style: TextStyle(color: AppColors.muted, fontSize: 13, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 18),
-              availabilityCard(),
-              if (AppData.premiumFeatureVisible) ...[
-                const SizedBox(height: 14),
-                premiumEntryCard(),
-              ],
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(child: metricCard('Today Trips', '${docs.length}', Icons.route_rounded)),
-                  const SizedBox(width: 12),
-                  Expanded(child: metricCard('Earnings', '₹2,450', Icons.payments_outlined)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: metricCard('Online Hours', '4h 12m', Icons.schedule_rounded)),
-                  const SizedBox(width: 12),
-                  Expanded(child: metricCard('Rating', '4.9 ★', Icons.star_rounded)),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Live Incoming Requests',
-                      style: TextStyle(color: AppColors.navy, fontSize: 18, fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      setState(() {
-                        selectedTab = 1;
-                      });
-                    },
-                    child: const Text('View all', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (visibleDocs.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(28),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: const Column(
+          final assignedStream = partnerId == null
+              ? null
+              : FirebaseFirestore.instance
+                  .collection('bookings')
+                  .where('partnerId', isEqualTo: partnerId)
+                  .snapshots();
+
+          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+            stream: assignedStream,
+            builder: (context, assignedSnapshot) {
+              final assignedDocs = assignedSnapshot.data?.docs ?? [];
+              final completedToday = assignedDocs.where((doc) {
+                final data = doc.data();
+                return (data['status'] ?? '').toString().toUpperCase() == 'COMPLETED' && _isToday(data);
+              }).toList();
+
+              final todayTrips = completedToday.length;
+              final todayEarnings = completedToday.fold<double>(
+                0,
+                (sum, doc) => sum + (_numericFare(doc.data()) * 0.85),
+              );
+
+              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: partnerId == null
+                    ? null
+                    : FirebaseFirestore.instance.collection('partners').doc(partnerId).snapshots(),
+                builder: (context, partnerSnapshot) {
+                  final partnerData = partnerSnapshot.data?.data() ?? <String, dynamic>{};
+                  final rating = partnerData['rating'];
+                  final ratingText = rating is num ? '${rating.toStringAsFixed(1)} ★' : '—';
+                  final onlineHours = _formatOnlineHours(partnerData);
+                  final earningsText = '₹${todayEarnings.toStringAsFixed(0)}';
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
                     children: [
-                      Icon(Icons.radar_rounded, size: 40, color: AppColors.muted),
-                      SizedBox(height: 12),
-                      Text(
-                        'No incoming ride requests right now.',
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: AppColors.navy),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.navy.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.local_taxi_rounded, color: AppColors.navy, size: 20),
+                                ),
+                                const SizedBox(width: 10),
+                                const Text(
+                                  'WE DRIVE',
+                                  style: TextStyle(
+                                    color: AppColors.navy,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: BorderSide(color: Colors.grey.shade200),
+                              ),
+                            ),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const NotificationsScreen(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.notifications_none_rounded, color: AppColors.navy, size: 22),
+                          ),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            style: IconButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                side: BorderSide(color: Colors.grey.shade200),
+                              ),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                selectedTab = 3;
+                              });
+                            },
+                            icon: const Icon(Icons.person_outline_rounded, color: AppColors.navy, size: 22),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Stay online to receive bookings.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: AppColors.muted, fontSize: 12),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Welcome, Partner',
+                        style: TextStyle(
+                          color: AppColors.navy,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Stay ready. Great journeys start here.',
+                        style: TextStyle(color: AppColors.muted, fontSize: 13, fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 18),
+                      availabilityCard(),
+                      if (AppData.premiumFeatureVisible) ...[
+                        const SizedBox(height: 14),
+                        premiumEntryCard(),
+                      ],
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(child: metricCard('Today Trips', '$todayTrips', Icons.route_rounded)),
+                          const SizedBox(width: 12),
+                          Expanded(child: metricCard('Earnings', earningsText, Icons.payments_outlined)),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(child: metricCard('Online Hours', onlineHours, Icons.schedule_rounded)),
+                          const SizedBox(width: 12),
+                          Expanded(child: metricCard('Rating', ratingText, Icons.star_rounded)),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Live Incoming Requests',
+                              style: TextStyle(color: AppColors.navy, fontSize: 18, fontWeight: FontWeight.w900),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setState(() {
+                                selectedTab = 1;
+                              });
+                            },
+                            child: const Text('View all', style: TextStyle(fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (visibleDocs.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(28),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: const Column(
+                            children: [
+                              Icon(Icons.radar_rounded, size: 40, color: AppColors.muted),
+                              SizedBox(height: 12),
+                              Text(
+                                'No incoming ride requests right now.',
+                                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: AppColors.navy),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                'Stay online to receive bookings.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: AppColors.muted, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        ...visibleDocs.map((doc) {
+                          final data = doc.data();
+                          final booking = Booking(
+                            id: doc.id,
+                            vehicle: data['vehicleType'] ?? 'Sedan',
+                            customer: data['customerName'] ?? 'Passenger',
+                            status: data['status'] ?? 'SEARCHING',
+                            date: 'Today',
+                            time: 'Now',
+                            pickup: data['pickupLocation'] ?? 'Hyderabad',
+                            destination: data['dropLocation'] ?? 'Hyderabad',
+                            earnings: (_numericFare(data) > 0) ? (_numericFare(data) * 0.85).toInt() : 0,
+                          );
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: bookingCard(booking),
+                          );
+                        }),
                     ],
-                  ),
-                )
-              else
-                ...visibleDocs.map((doc) {
-                  final data = doc.data();
-                  final booking = Booking(
-                    id: doc.id,
-                    vehicle: data['vehicleType'] ?? 'Sedan',
-                    customer: data['customerName'] ?? 'Passenger',
-                    status: data['status'] ?? 'SEARCHING',
-                    date: 'Today',
-                    time: 'Now',
-                    pickup: data['pickupLocation'] ?? 'Hyderabad',
-                    destination: data['dropLocation'] ?? 'Hyderabad',
-                    earnings: (data['fare'] is num) ? ((data['fare'] as num) * 0.85).toInt() : 799,
                   );
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: bookingCard(booking),
-                  );
-                }),
-            ],
+                },
+              );
+            },
           );
         },
       ),
