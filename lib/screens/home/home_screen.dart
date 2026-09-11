@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../data/app_data.dart';
 import '../../services/partner_presence_service.dart';
+import '../../services/booking_assignment_service.dart';
 import '../../models/booking.dart';
 import '../bookings/bookings_screen.dart';
 import '../earnings/earnings_screen.dart';
@@ -74,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final pages = <Widget>[
       homeBody(),
-      BookingsScreen(bookings: AppData.bookings), // Dedicated Bookings Tab
+      BookingsScreen(bookings: AppData.bookings),
       const EarningsScreen(),
       const AccountScreen(),
     ];
@@ -134,11 +135,10 @@ class _HomeScreenState extends State<HomeScreen> {
         stream: FirebaseFirestore.instance
             .collection('bookings')
             .orderBy('createdAt', descending: true)
-            .limit(1) // Home screen par sirf 1 latest booking dikhegi
+            .limit(1)
             .snapshots(),
         builder: (context, snapshot) {
           final docs = snapshot.data?.docs ?? [];
-          
           return ListView(
             padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
             children: [
@@ -198,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     onPressed: () {
                       setState(() {
-                        selectedTab = 3; // Account Tab index
+                        selectedTab = 3;
                       });
                     },
                     icon: const Icon(Icons.person_outline_rounded, color: AppColors.navy, size: 22),
@@ -220,52 +220,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(color: AppColors.muted, fontSize: 13, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 18),
-
               availabilityCard(),
-
               if (AppData.premiumFeatureVisible) ...[
                 const SizedBox(height: 14),
                 premiumEntryCard(),
               ],
-
               const SizedBox(height: 18),
               Row(
                 children: [
-                  Expanded(
-                    child: metricCard(
-                      'Today Trips',
-                      '${docs.length}',
-                      Icons.route_rounded,
-                    ),
-                  ),
+                  Expanded(child: metricCard('Today Trips', '${docs.length}', Icons.route_rounded)),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: metricCard(
-                      'Earnings',
-                      '₹2,450',
-                      Icons.payments_outlined,
-                    ),
-                  ),
+                  Expanded(child: metricCard('Earnings', '₹2,450', Icons.payments_outlined)),
                 ],
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(
-                    child: metricCard(
-                      'Online Hours',
-                      '4h 12m',
-                      Icons.schedule_rounded,
-                    ),
-                  ),
+                  Expanded(child: metricCard('Online Hours', '4h 12m', Icons.schedule_rounded)),
                   const SizedBox(width: 12),
-                  Expanded(
-                    child: metricCard(
-                      'Rating',
-                      '4.9 ★',
-                      Icons.star_rounded,
-                    ),
-                  ),
+                  Expanded(child: metricCard('Rating', '4.9 ★', Icons.star_rounded)),
                 ],
               ),
               const SizedBox(height: 24),
@@ -274,28 +247,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   const Expanded(
                     child: Text(
                       'Live Incoming Requests',
-                      style: TextStyle(
-                        color: AppColors.navy,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style: TextStyle(color: AppColors.navy, fontSize: 18, fontWeight: FontWeight.w900),
                     ),
                   ),
                   TextButton(
                     onPressed: () {
                       setState(() {
-                        selectedTab = 1; // "View all" click karne par Bookings tab par redirect hoga
+                        selectedTab = 1;
                       });
                     },
-                    child: const Text(
-                      'View all',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
+                    child: const Text('View all', style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
-
               if (docs.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(28),
@@ -304,17 +269,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Colors.grey.shade200),
                   ),
-                  child: Column(
-                    children: const [
+                  child: const Column(
+                    children: [
                       Icon(Icons.radar_rounded, size: 40, color: AppColors.muted),
                       SizedBox(height: 12),
                       Text(
-                        "No incoming ride requests right now.",
+                        'No incoming ride requests right now.',
                         style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: AppColors.navy),
                       ),
                       SizedBox(height: 4),
                       Text(
-                        "Stay online to receive bookings.",
+                        'Stay online to receive bookings.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: AppColors.muted, fontSize: 12),
                       ),
@@ -326,13 +291,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   final data = doc.data();
                   final booking = Booking(
                     id: doc.id,
-                    vehicle: data['vehicleType'] ?? "Sedan",
-                    customer: data['customerName'] ?? "Passenger",
-                    status: data['status'] ?? "SEARCHING",
-                    date: "Today",
-                    time: "Now",
-                    pickup: data['pickupLocation'] ?? "Hyderabad",
-                    destination: data['dropLocation'] ?? "Hyderabad",
+                    vehicle: data['vehicleType'] ?? 'Sedan',
+                    customer: data['customerName'] ?? 'Passenger',
+                    status: data['status'] ?? 'SEARCHING',
+                    date: 'Today',
+                    time: 'Now',
+                    pickup: data['pickupLocation'] ?? 'Hyderabad',
+                    destination: data['dropLocation'] ?? 'Hyderabad',
                     earnings: (data['fare'] is num) ? ((data['fare'] as num) * 0.85).toInt() : 799,
                   );
                   return Padding(
@@ -368,11 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
           CircleAvatar(
             radius: 26,
             backgroundColor: Colors.white,
-            child: Icon(
-              Icons.person_pin_circle_outlined,
-              color: color,
-              size: 28,
-            ),
+            child: Icon(Icons.person_pin_circle_outlined, color: color, size: 28),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -381,30 +342,17 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 const Text(
                   'Your availability',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   online ? 'ONLINE' : 'OFFLINE',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  online
-                      ? 'You can receive new bookings.'
-                      : 'Go online to receive requests.',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 11,
-                  ),
+                  online ? 'You can receive new bookings.' : 'Go online to receive requests.',
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
                 ),
               ],
             ),
@@ -423,33 +371,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget premiumEntryCard() {
-    final int requests = AppData.premiumBookings
-        .where((booking) => booking.status == 'REQUESTED')
-        .length;
+    final int requests = AppData.premiumBookings.where((booking) => booking.status == 'REQUESTED').length;
 
     return Container(
       decoration: BoxDecoration(
         color: AppColors.navy,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.gold.withOpacity(0.4), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.navy.withOpacity(0.15),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(0.15), blurRadius: 8, offset: const Offset(0, 4))],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
           onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => const PremiumBookingsScreen(),
-              ),
-            );
+            Navigator.of(context).push(MaterialPageRoute(builder: (context) => const PremiumBookingsScreen()));
           },
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -458,43 +394,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 const CircleAvatar(
                   radius: 24,
                   backgroundColor: AppColors.gold,
-                  child: Icon(
-                    Icons.workspace_premium_rounded,
-                    color: AppColors.navyDark,
-                    size: 24,
-                  ),
+                  child: Icon(Icons.workspace_premium_rounded, color: AppColors.navyDark, size: 24),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Premium Bookings',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
+                      const Text('Premium Bookings', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900)),
                       const SizedBox(height: 2),
                       Text(
-                        requests == 0
-                            ? 'Exclusive chauffeur opportunities'
-                            : '$requests new premium request${requests == 1 ? '' : 's'}',
-                        style: const TextStyle(
-                          color: AppColors.gold,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
+                        requests == 0 ? 'Exclusive chauffeur opportunities' : '$requests new premium request${requests == 1 ? '' : 's'}',
+                        style: const TextStyle(color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
                 ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.gold,
-                ),
+                const Icon(Icons.chevron_right_rounded, color: AppColors.gold),
               ],
             ),
           ),
@@ -518,23 +434,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Icon(icon, color: AppColors.navy, size: 22),
           ),
           const SizedBox(height: 12),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.muted,
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          Text(title, style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
           const SizedBox(height: 2),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.navy,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
+          Text(value, style: const TextStyle(color: AppColors.navy, fontSize: 18, fontWeight: FontWeight.w900)),
         ],
       ),
     );
@@ -546,19 +448,14 @@ class _HomeScreenState extends State<HomeScreen> {
         showModalBottomSheet(
           context: context,
           backgroundColor: Colors.white,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
+          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
           builder: (context) => Padding(
             padding: const EdgeInsets.all(24.0),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Live Booking Request',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.navy),
-                ),
+                const Text('Live Booking Request', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.navy)),
                 const SizedBox(height: 12),
                 Text('Customer: ${booking.customer}', style: const TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
@@ -573,9 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: OutlinedButton(
                         onPressed: () {
                           Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Booking Declined')),
-                          );
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Booking Declined')));
                         },
                         style: OutlinedButton.styleFrom(
                           foregroundColor: Colors.red,
@@ -589,21 +484,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(width: 16),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () async {
-                          await FirebaseFirestore.instance
-                              .collection('bookings')
-                              .doc(booking.id)
-                              .update({'status': 'ACCEPTED'});
-                          
-                          if (!mounted) return;
-                          Navigator.pop(context);
-                          
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) => BookingDetailScreen(booking: booking),
-                            ),
-                          );
-                        },
+                        onPressed: online
+                            ? () async {
+                                final accepted = await BookingAssignmentService.acceptBooking(booking.id);
+                                if (!mounted) return;
+                                if (!accepted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Booking could not be accepted. Make sure you are online and the booking is still available.'),
+                                      backgroundColor: Colors.red,
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                Navigator.pop(context);
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (context) => BookingDetailScreen(booking: booking)),
+                                );
+                              }
+                            : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.green,
                           foregroundColor: Colors.white,
@@ -627,54 +527,23 @@ class _HomeScreenState extends State<HomeScreen> {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  booking.customer,
-                  style: const TextStyle(
-                    color: AppColors.navy,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+                child: Text(booking.customer, style: const TextStyle(color: AppColors.navy, fontSize: 16, fontWeight: FontWeight.w900)),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.navy.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  booking.status.toUpperCase(),
-                  style: const TextStyle(
-                    color: AppColors.navy,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 10,
-                  ),
-                ),
+                decoration: BoxDecoration(color: AppColors.navy.withOpacity(0.08), borderRadius: BorderRadius.circular(6)),
+                child: Text(booking.status.toUpperCase(), style: const TextStyle(color: AppColors.navy, fontWeight: FontWeight.bold, fontSize: 10)),
               ),
             ],
           ),
           const SizedBox(height: 6),
-          Text(
-            '${booking.date} • ${booking.time}',
-            style: const TextStyle(
-              color: AppColors.muted,
-              fontWeight: FontWeight.w600,
-              fontSize: 12,
-            ),
-          ),
+          Text('${booking.date} • ${booking.time}', style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.w600, fontSize: 12)),
           const SizedBox(height: 10),
           Row(
             children: [
               const Icon(Icons.trip_origin, size: 14, color: Colors.green),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  booking.pickup,
-                  style: const TextStyle(fontSize: 13, color: AppColors.navy, fontWeight: FontWeight.w500),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+              Expanded(child: Text(booking.pickup, style: const TextStyle(fontSize: 13, color: AppColors.navy, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis)),
             ],
           ),
           const SizedBox(height: 4),
@@ -682,14 +551,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               const Icon(Icons.location_pin, size: 14, color: Colors.red),
               const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'To: ${booking.destination}',
-                  style: const TextStyle(fontSize: 13, color: AppColors.muted),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
+              Expanded(child: Text('To: ${booking.destination}', style: const TextStyle(fontSize: 13, color: AppColors.muted), maxLines: 1, overflow: TextOverflow.ellipsis)),
             ],
           ),
           const SizedBox(height: 14),
@@ -697,35 +559,13 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(
-                Icons.payments_outlined,
-                color: AppColors.gold,
-                size: 18,
-              ),
+              const Icon(Icons.payments_outlined, color: AppColors.gold, size: 18),
               const SizedBox(width: 6),
-              Text(
-                '₹${booking.earnings} (85% Share)',
-                style: const TextStyle(
-                  color: AppColors.navy,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 13,
-                ),
-              ),
+              Text('₹${booking.earnings} (85% Share)', style: const TextStyle(color: AppColors.navy, fontWeight: FontWeight.w900, fontSize: 13)),
               const Spacer(),
-              const Text(
-                'Tap to Action',
-                style: TextStyle(
-                  color: AppColors.navy,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-              ),
+              const Text('Tap to Action', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.bold, fontSize: 12)),
               const SizedBox(width: 2),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.navy,
-                size: 16,
-              ),
+              const Icon(Icons.chevron_right_rounded, color: AppColors.navy, size: 16),
             ],
           ),
         ],
