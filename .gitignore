@@ -6,6 +6,17 @@ build/
 .vscode/
 *.iml
 
+# Flutter generated files
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android generated tooling / crash logs
+android/.kotlin/
+android/hs_err_pid*.log
+
+# Local archives / generated bundles
+*.zip
+
 # Android signing secrets / keystores
 android/key.properties
 android/*.jks
