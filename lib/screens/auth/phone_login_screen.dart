@@ -83,7 +83,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
     Future<void> verified(UserCredential c) async {
       final user = c.user ?? FirebaseAuth.instance.currentUser;
       if (user == null) return;
-      await ensurePartner(user);
+      await ensurePartner(user, allowCreate: link);
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeScreen()), (_) => false);
     }
@@ -105,17 +105,21 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
         c = await PhoneAuthService.signInWithSmsCode(verificationId: verificationId!, smsCode: otp.text);
       }
       final user = c.user!;
-      await ensurePartner(user);
+      await ensurePartner(user, allowCreate: register);
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const HomeScreen()), (_) => false);
     } on FirebaseAuthException catch (e) { message(e.message ?? 'Invalid OTP.', error: true); }
-    catch (e) { message('OTP verification failed: $e', error: true); }
+    catch (e) { message(e.toString().contains('registered') ? 'This mobile number is not registered as a WE DRIVE partner.' : 'OTP verification failed: $e', error: true); }
     finally { if (mounted) setState(() => loading = false); }
   }
 
-  Future<void> ensurePartner(User user) async {
+  Future<void> ensurePartner(User user, {required bool allowCreate}) async {
     final ref = FirebaseFirestore.instance.collection('partners').doc(user.uid);
     final snap = await ref.get();
+    if (!snap.exists && !allowCreate) {
+      await FirebaseAuth.instance.signOut();
+      throw StateError('mobile number is not registered');
+    }
     final d = snap.data() ?? <String, dynamic>{};
     await ref.set({
       'uid': user.uid, 'name': d['name'] ?? user.displayName ?? 'Partner', 'email': d['email'] ?? user.email ?? '',
