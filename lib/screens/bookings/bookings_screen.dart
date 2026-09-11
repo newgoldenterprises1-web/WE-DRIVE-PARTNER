@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../models/booking.dart';
 import '../../theme/app_theme.dart';
@@ -14,6 +15,8 @@ class BookingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentPartnerId = FirebaseAuth.instance.currentUser?.uid;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(
@@ -27,28 +30,61 @@ class BookingsScreen extends StatelessWidget {
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const Center(
+              child: Text(
+                'Unable to load live bookings.',
+                style: TextStyle(color: AppColors.muted, fontWeight: FontWeight.w600),
+              ),
+            );
+          }
+
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
           final docs = snapshot.data?.docs ?? [];
-          
-          final liveBookings = docs.map((doc) {
+
+          final liveDocs = docs.where((doc) {
             final data = doc.data();
+            final status = (data['status'] ?? 'SEARCHING').toString().toUpperCase();
+            final partnerId = (data['partnerId'] ?? '').toString().trim();
+
+            if ((status == 'REQUESTED' || status == 'SEARCHING') && partnerId.isEmpty) {
+              return true;
+            }
+
+            return status == 'ACCEPTED' &&
+                currentPartnerId != null &&
+                partnerId == currentPartnerId;
+          }).toList();
+
+          final liveBookings = liveDocs.map((doc) {
+            final data = doc.data();
+            DateTime? acceptedAt;
+            final rawAcceptedAt = data['acceptedAt'];
+            if (rawAcceptedAt is Timestamp) {
+              acceptedAt = rawAcceptedAt.toDate();
+            }
+
             return Booking(
               id: doc.id,
-              vehicle: data['vehicleType'] ?? "Sedan",
-              customer: data['customerName'] ?? "Passenger",
-              status: data['status'] ?? "SEARCHING",
-              date: "Today",
-              time: "Now",
-              pickup: data['pickupLocation'] ?? "Hyderabad",
-              destination: data['dropLocation'] ?? "Hyderabad",
+              vehicle: (data['vehicleType'] ?? 'Sedan').toString(),
+              customer: (data['customerName'] ?? 'Passenger').toString(),
+              status: (data['status'] ?? 'SEARCHING').toString(),
+              date: 'Today',
+              time: 'Now',
+              pickup: (data['pickupLocation'] ?? 'Hyderabad').toString(),
+              destination: (data['dropLocation'] ?? 'Hyderabad').toString(),
               earnings: (data['fare'] is num) ? ((data['fare'] as num) * 0.85).toInt() : 799,
+              partnerId: (data['partnerId'] ?? '').toString().trim().isEmpty
+                  ? null
+                  : (data['partnerId'] ?? '').toString().trim(),
+              acceptedBy: (data['acceptedBy'] ?? '').toString().trim().isEmpty
+                  ? null
+                  : (data['acceptedBy'] ?? '').toString().trim(),
+              acceptedAt: acceptedAt,
             );
-          }).where((b) {
-            final status = b.status.toUpperCase();
-            return status == 'REQUESTED' || status == 'ACCEPTED' || status == 'SEARCHING';
           }).toList();
 
           if (liveBookings.isEmpty) {
@@ -74,7 +110,7 @@ class BookingsScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final booking = liveBookings[index];
               final bool isRequested = booking.status.toUpperCase() == 'REQUESTED';
-              
+
               return AppCard(
                 onTap: () {
                   Navigator.of(context).push(
