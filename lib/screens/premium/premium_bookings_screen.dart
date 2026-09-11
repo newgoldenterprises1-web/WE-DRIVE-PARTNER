@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../models/booking.dart';
 import '../../services/partner_plan_service.dart';
+import '../../services/razorpay_payment_service.dart';
 import '../../theme/app_theme.dart';
 import 'premium_booking_detail_screen.dart';
 
@@ -17,6 +18,7 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
   int selectedTab = 0;
   bool premium = false;
   bool loading = true;
+  bool processing = false;
 
   @override
   void initState() {
@@ -36,6 +38,26 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
     } finally {
       if (mounted) setState(() => loading = false);
     }
+  }
+
+  Future<void> _startPremiumPayment() async {
+    if (processing) return;
+    setState(() => processing = true);
+    final success = await RazorpayPaymentService.instance.payPlan(plan: 'PREMIUM');
+    if (!mounted) return;
+    if (success) {
+      await _loadPlan();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Premium Drive activated successfully.')),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Payment was not completed or could not be verified.'), backgroundColor: Colors.orange),
+      );
+    }
+    if (mounted) setState(() => processing = false);
   }
 
   Booking _bookingFromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
@@ -149,7 +171,7 @@ class _PremiumBookingsScreenState extends State<PremiumBookingsScreen> {
           Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [Text('Premium Drive fee', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w800)), Text('₹699', style: TextStyle(color: AppColors.gold, fontSize: 22, fontWeight: FontWeight.w900))]),
         ])),
         const SizedBox(height: 18),
-        SizedBox(width: double.infinity, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Premium payment gateway is not configured yet. No payment was processed.'), backgroundColor: Colors.orange)), child: const Text('PAY ₹699 & UPGRADE', style: TextStyle(fontWeight: FontWeight.w900)))),
+        SizedBox(width: double.infinity, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0), onPressed: processing ? null : _startPremiumPayment, child: processing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Text('PAY ₹699 & UPGRADE', style: TextStyle(fontWeight: FontWeight.w900)))),
         const SizedBox(height: 10),
         const Text('Premium bookings remain locked until the Premium Drive payment is verified and the partner account is marked Premium.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4)),
       ]),
