@@ -11,10 +11,6 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/partners/$(request.auth.uid));
     }
 
-    function isOwnPartner(partnerId) {
-      return isPartner() && partnerId == request.auth.uid;
-    }
-
     function isPendingBooking(data) {
       return data.status in ['REQUESTED', 'SEARCHING', 'requested', 'searching'];
     }
@@ -25,7 +21,7 @@ service cloud.firestore {
 
     function validStatusTransition(fromStatus, toStatus) {
       return (
-        (fromStatus in ['REQUESTED', 'SEARCHING', 'requested', 'searching'] && toStatus == 'ACCEPTED') ||
+        (fromStatus in ['REQUESTED', 'SEARCHING', 'requested', 'searching'] && toStatus in ['ACCEPTED', 'CANCELLED']) ||
         (fromStatus == 'ACCEPTED' && toStatus in ['ARRIVING', 'CANCELLED']) ||
         (fromStatus == 'ARRIVING' && toStatus in ['ARRIVED', 'CANCELLED']) ||
         (fromStatus == 'ARRIVED' && toStatus in ['TRIP_STARTED', 'CANCELLED']) ||
@@ -37,7 +33,7 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.auth.uid == partnerId
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.isOnline == false;
+        && (!('isOnline' in request.resource.data) || request.resource.data.isOnline == false);
 
       allow read: if signedIn() && request.auth.uid == partnerId;
 
@@ -49,7 +45,6 @@ service cloud.firestore {
           'uid',
           'name',
           'email',
-          'rating',
           'isOnline',
           'location',
           'latitude',
@@ -66,13 +61,11 @@ service cloud.firestore {
     }
 
     match /bookings/{bookingId} {
-      // Partners can see unassigned live requests and their own assigned bookings.
       allow read: if isPartner()
         && (isPendingBooking(resource.data) || isOwnedBooking(resource.data));
 
       allow create: if false;
 
-      // Acceptance is atomic and may only claim a still-pending booking.
       allow update: if isPartner()
         && (
           (
