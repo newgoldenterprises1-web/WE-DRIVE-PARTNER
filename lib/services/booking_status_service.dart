@@ -74,10 +74,16 @@ class BookingStatusService {
           throw StateError('not_owner');
         }
 
-        transaction.set(ref, {
+        final update = <String, dynamic>{
           'status': target,
           'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        };
+
+        if (target == 'COMPLETED') {
+          update['completedAt'] = FieldValue.serverTimestamp();
+        }
+
+        transaction.set(ref, update, SetOptions(merge: true));
       });
 
       return true;
