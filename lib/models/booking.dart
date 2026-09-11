@@ -8,6 +8,9 @@ class Booking {
   String vehicle;
   String status;
   int earnings;
+  String? partnerId;
+  String? acceptedBy;
+  DateTime? acceptedAt;
 
   Booking({
     required this.id,
@@ -19,5 +22,8 @@ class Booking {
     required this.vehicle,
     required this.status,
     required this.earnings,
+    this.partnerId,
+    this.acceptedBy,
+    this.acceptedAt,
   });
 }
