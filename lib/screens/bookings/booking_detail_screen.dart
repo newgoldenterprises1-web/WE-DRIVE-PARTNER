@@ -2,10 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import '../../theme/app_theme.dart';
 import '../../models/booking.dart';
+import '../../services/booking_status_service.dart';
+import '../../services/location_service.dart';
+import '../../services/navigation_service.dart';
 
 class BookingDetailScreen extends StatefulWidget {
   final Booking booking;
@@ -55,7 +57,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
       if (doc.exists && mounted) {
         final data = doc.data();
         if (data != null) {
-          debugPrint("Existing inspection data retrieved successfully.");
+          debugPrint('Existing inspection data retrieved successfully.');
         }
       }
     } catch (e) {
@@ -63,19 +65,35 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     }
   }
 
-  // Real Google Maps Navigation Integration
   Future<void> _openMapNavigation(String destinationAddress) async {
-    final String encodedAddress = Uri.encodeComponent(destinationAddress);
-    final Uri googleMapsUrl = Uri.parse('https://www.google.com/maps/search/?api=1&query=$encodedAddress');
+    final address = destinationAddress.trim();
+    if (address.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pickup location is unavailable.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
 
     try {
-      if (await canLaunchUrl(googleMapsUrl)) {
-        await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
-      } else {
-        if (!mounted) return;
+      // Request/check location permission before opening navigation so Google Maps
+      // can use the driver's current position as the navigation origin.
+      await LocationService.getCurrentPosition();
+      final launched = await NavigationService.openDrivingNavigation(address);
+
+      if (!mounted) return;
+      if (!launched) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not launch Google Maps.'),
+            content: Text('Could not open Google Maps navigation.'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
           ),
@@ -90,6 +108,12 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
           behavior: SnackBarBehavior.floating,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
   }
 
@@ -146,20 +170,23 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         postTripLeft != null;
   }
 
-  Future<String?> _uploadImageToStorageWithRetry(File imageFile, String folderName, {int retries = 3}) async {
+  Future<String?> _uploadImageToStorageWithRetry(
+    File imageFile,
+    String folderName, {
+    int retries = 3,
+  }) async {
     for (int i = 0; i < retries; i++) {
       try {
-        String fileName = '${widget.booking.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        Reference ref = FirebaseStorage.instance
+        final fileName = '${widget.booking.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final ref = FirebaseStorage.instance
             .ref()
             .child('inspections')
             .child(folderName)
             .child(fileName);
 
-        UploadTask uploadTask = ref.putFile(imageFile);
-        TaskSnapshot snapshot = await uploadTask;
-        String downloadUrl = await snapshot.ref.getDownloadURL();
-        return downloadUrl;
+        final uploadTask = ref.putFile(imageFile);
+        final snapshot = await uploadTask;
+        return snapshot.ref.getDownloadURL();
       } catch (e) {
         if (i == retries - 1) {
           debugPrint('Upload failed after $retries attempts: $e');
@@ -172,79 +199,138 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   }
 
   Future<void> changeStatus(String nextStatus) async {
+    if (isLoading) return;
+
+    final target = nextStatus.trim().toUpperCase();
+    if (!BookingStatusService.canTransition(status, target)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid booking transition: $status → $target'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     setState(() {
       isLoading = true;
     });
 
     try {
-      Map<String, dynamic> updateData = {
-        'status': nextStatus,
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
+      final updateData = <String, dynamic>{};
 
-      if (nextStatus == 'TRIP_STARTED') {
-        updateData['preTripFrontUrl'] = preTripFront != null ? await _uploadImageToStorageWithRetry(preTripFront!, 'pre_trip') : null;
-        updateData['preTripBackUrl'] = preTripBack != null ? await _uploadImageToStorageWithRetry(preTripBack!, 'pre_trip') : null;
-        updateData['preTripRightUrl'] = preTripRight != null ? await _uploadImageToStorageWithRetry(preTripRight!, 'pre_trip') : null;
-        updateData['preTripLeftUrl'] = preTripLeft != null ? await _uploadImageToStorageWithRetry(preTripLeft!, 'pre_trip') : null;
-        updateData['driverSelfieUrl'] = driverSelfie != null ? await _uploadImageToStorageWithRetry(driverSelfie!, 'selfies') : null;
-      }
+      if (target == 'TRIP_STARTED') {
+        if (!areAllPreTripPhotosCaptured) {
+          throw StateError('missing_pre_trip_photos');
+        }
 
-      if (nextStatus == 'COMPLETED') {
-        updateData['postTripFrontUrl'] = postTripFront != null ? await _uploadImageToStorageWithRetry(postTripFront!, 'post_trip') : null;
-        updateData['postTripBackUrl'] = postTripBack != null ? await _uploadImageToStorageWithRetry(postTripBack!, 'post_trip') : null;
-        updateData['postTripRightUrl'] = postTripRight != null ? await _uploadImageToStorageWithRetry(postTripRight!, 'post_trip') : null;
-        updateData['postTripLeftUrl'] = postTripLeft != null ? await _uploadImageToStorageWithRetry(postTripLeft!, 'post_trip') : null;
-      }
+        updateData['preTripFrontUrl'] =
+            await _uploadImageToStorageWithRetry(preTripFront!, 'pre_trip');
+        updateData['preTripBackUrl'] =
+            await _uploadImageToStorageWithRetry(preTripBack!, 'pre_trip');
+        updateData['preTripRightUrl'] =
+            await _uploadImageToStorageWithRetry(preTripRight!, 'pre_trip');
+        updateData['preTripLeftUrl'] =
+            await _uploadImageToStorageWithRetry(preTripLeft!, 'pre_trip');
+        updateData['driverSelfieUrl'] =
+            await _uploadImageToStorageWithRetry(driverSelfie!, 'selfies');
 
-      final docRef = FirebaseFirestore.instance.collection('bookings').doc(widget.booking.id);
-      final docSnap = await docRef.get();
-
-      if (docSnap.exists) {
-        await docRef.set(updateData, SetOptions(merge: true));
-      } else {
-        final query = await FirebaseFirestore.instance
-            .collection('bookings')
-            .where('id', isEqualTo: widget.booking.id)
-            .get();
-
-        if (query.docs.isNotEmpty) {
-          await query.docs.first.reference.set(updateData, SetOptions(merge: true));
-        } else {
-          await docRef.set(updateData, SetOptions(merge: true));
+        if (updateData.values.any((value) => value == null)) {
+          throw StateError('pre_trip_upload_failed');
         }
       }
 
-      setState(() {
-        status = nextStatus.toUpperCase();
-        widget.booking.status = nextStatus;
-        isLoading = false;
-      });
+      if (target == 'COMPLETED') {
+        if (!areAllPostTripPhotosCaptured) {
+          throw StateError('missing_post_trip_photos');
+        }
+
+        updateData['postTripFrontUrl'] =
+            await _uploadImageToStorageWithRetry(postTripFront!, 'post_trip');
+        updateData['postTripBackUrl'] =
+            await _uploadImageToStorageWithRetry(postTripBack!, 'post_trip');
+        updateData['postTripRightUrl'] =
+            await _uploadImageToStorageWithRetry(postTripRight!, 'post_trip');
+        updateData['postTripLeftUrl'] =
+            await _uploadImageToStorageWithRetry(postTripLeft!, 'post_trip');
+
+        if (updateData.values.any((value) => value == null)) {
+          throw StateError('post_trip_upload_failed');
+        }
+      }
+
+      final updated = await BookingStatusService.updateStatus(
+        bookingId: widget.booking.id,
+        nextStatus: target,
+      );
+
+      if (!updated) {
+        throw StateError('status_update_rejected');
+      }
+
+      // Store inspection URLs only after the atomic status/ownership transition
+      // succeeds, so rejected transitions do not mutate the booking record.
+      if (updateData.isNotEmpty) {
+        await FirebaseFirestore.instance
+            .collection('bookings')
+            .doc(widget.booking.id)
+            .set(updateData, SetOptions(merge: true));
+      }
 
       if (!mounted) return;
+      setState(() {
+        status = target;
+        widget.booking.status = target;
+      });
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Booking status updated to: $nextStatus'),
+          content: Text('Booking status updated to: $target'),
           behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
       if (!mounted) return;
+      String message = 'Error updating booking status.';
+      if (e is StateError) {
+        switch (e.message) {
+          case 'missing_pre_trip_photos':
+            message = 'Please capture all pre-trip photos and driver selfie first.';
+            break;
+          case 'missing_post_trip_photos':
+            message = 'Please capture all post-trip photos first.';
+            break;
+          case 'pre_trip_upload_failed':
+            message = 'Pre-trip inspection upload failed. Please retry.';
+            break;
+          case 'post_trip_upload_failed':
+            message = 'Post-trip inspection upload failed. Please retry.';
+            break;
+          case 'status_update_rejected':
+            message = 'Booking is no longer available for this action.';
+            break;
+        }
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Error updating status: $e'),
+          content: Text(message),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
         ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
   }
 
   Widget _buildPhotoRow(String title, File? file, String typeKey) {
-    bool isCaptured = file != null;
+    final isCaptured = file != null;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.all(8),
@@ -252,7 +338,9 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         color: isCaptured ? Colors.green.withOpacity(0.05) : Colors.transparent,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: isCaptured ? Colors.green.withOpacity(0.3) : Colors.grey.withOpacity(0.2),
+          color: isCaptured
+              ? Colors.green.withOpacity(0.3)
+              : Colors.grey.withOpacity(0.2),
         ),
       ),
       child: Row(
@@ -267,7 +355,10 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   margin: const EdgeInsets.only(right: 10),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(6),
-                    image: DecorationImage(image: FileImage(file), fit: BoxFit.cover),
+                    image: DecorationImage(
+                      image: FileImage(file),
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 )
               else
@@ -279,14 +370,22 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                     color: AppColors.muted.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: const Icon(Icons.camera_alt, size: 20, color: AppColors.muted),
+                  child: const Icon(
+                    Icons.camera_alt,
+                    size: 20,
+                    color: AppColors.muted,
+                  ),
                 ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy, fontSize: 14),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.navy,
+                      fontSize: 14,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -302,9 +401,15 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
             ],
           ),
           ElevatedButton.icon(
-            onPressed: () => _capturePhoto(typeKey),
-            icon: Icon(isCaptured ? Icons.check_circle : Icons.camera_alt, size: 16),
-            label: Text(isCaptured ? 'Retake' : 'Capture', style: const TextStyle(fontSize: 12)),
+            onPressed: isLoading ? null : () => _capturePhoto(typeKey),
+            icon: Icon(
+              isCaptured ? Icons.check_circle : Icons.camera_alt,
+              size: 16,
+            ),
+            label: Text(
+              isCaptured ? 'Retake' : 'Capture',
+              style: const TextStyle(fontSize: 12),
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: isCaptured ? Colors.green : AppColors.navy,
               foregroundColor: Colors.white,
@@ -323,17 +428,15 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     final Booking b = widget.booking;
     final currentStatus = status.toUpperCase();
 
-    bool showPreTrip = currentStatus == 'ARRIVED' || currentStatus == 'TRIP_STARTED';
-    bool showPostTrip = currentStatus == 'TRIP_STARTED';
-    
-    bool showNavigate = currentStatus != 'ARRIVED' && 
-                        currentStatus != 'TRIP_STARTED' && 
-                        currentStatus != 'COMPLETED' && 
-                        currentStatus != 'CANCELLED';
-
-    bool showContact = currentStatus != 'TRIP_STARTED' && 
-                       currentStatus != 'COMPLETED' && 
-                       currentStatus != 'CANCELLED';
+    final showPreTrip = currentStatus == 'ARRIVED' || currentStatus == 'TRIP_STARTED';
+    final showPostTrip = currentStatus == 'TRIP_STARTED';
+    final showNavigate = currentStatus != 'ARRIVED' &&
+        currentStatus != 'TRIP_STARTED' &&
+        currentStatus != 'COMPLETED' &&
+        currentStatus != 'CANCELLED';
+    final showContact = currentStatus != 'TRIP_STARTED' &&
+        currentStatus != 'COMPLETED' &&
+        currentStatus != 'CANCELLED';
 
     return Scaffold(
       appBar: AppBar(
@@ -396,7 +499,6 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 18),
-
                 if (showPreTrip) ...[
                   AppCard(
                     child: Column(
@@ -404,10 +506,17 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                       children: [
                         const Text(
                           'Pre-Trip Verification & Inspection',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.navy),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: AppColors.navy,
+                          ),
                         ),
                         const SizedBox(height: 4),
-                        const Text('Upload 4-side vehicle photos and your selfie before starting trip.', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                        const Text(
+                          'Upload 4-side vehicle photos and your selfie before starting trip.',
+                          style: TextStyle(color: AppColors.muted, fontSize: 12),
+                        ),
                         const SizedBox(height: 12),
                         _buildPhotoRow('Front Side', preTripFront, 'Front'),
                         _buildPhotoRow('Back Side', preTripBack, 'Back'),
@@ -420,7 +529,6 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
-
                 if (showPostTrip) ...[
                   AppCard(
                     child: Column(
@@ -428,10 +536,17 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                       children: [
                         const Text(
                           'Post-Trip Vehicle Inspection (4 Sides)',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.navy),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: AppColors.navy,
+                          ),
                         ),
                         const SizedBox(height: 4),
-                        const Text('Capture photos of all 4 sides after completing trip.', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+                        const Text(
+                          'Capture photos of all 4 sides after completing trip.',
+                          style: TextStyle(color: AppColors.muted, fontSize: 12),
+                        ),
                         const SizedBox(height: 12),
                         _buildPhotoRow('Front Side', postTripFront, 'PostFront'),
                         _buildPhotoRow('Back Side', postTripBack, 'PostBack'),
@@ -442,7 +557,6 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
-
                 if (currentStatus == 'SEARCHING' || currentStatus == 'REQUESTED') ...[
                   AppPrimaryButton(
                     label: 'ACCEPT BOOKING',
@@ -468,13 +582,17 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                 ],
                 if (currentStatus == 'ARRIVED') ...[
                   AppPrimaryButton(
-                    label: areAllPreTripPhotosCaptured ? 'START TRIP' : 'COMPLETE PHOTOS TO START TRIP',
+                    label: areAllPreTripPhotosCaptured
+                        ? 'START TRIP'
+                        : 'COMPLETE PHOTOS TO START TRIP',
                     onPressed: areAllPreTripPhotosCaptured
                         ? () => changeStatus('TRIP_STARTED')
                         : () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Please capture all 4-side photos and driver selfie first!'),
+                                content: Text(
+                                  'Please capture all 4-side photos and driver selfie first!',
+                                ),
                                 backgroundColor: Colors.red,
                                 behavior: SnackBarBehavior.floating,
                               ),
@@ -484,13 +602,17 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                 ],
                 if (currentStatus == 'TRIP_STARTED') ...[
                   AppPrimaryButton(
-                    label: areAllPostTripPhotosCaptured ? 'COMPLETE TRIP' : 'COMPLETE POST-TRIP PHOTOS',
+                    label: areAllPostTripPhotosCaptured
+                        ? 'COMPLETE TRIP'
+                        : 'COMPLETE POST-TRIP PHOTOS',
                     onPressed: areAllPostTripPhotosCaptured
                         ? () => changeStatus('COMPLETED')
                         : () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Please capture all 4 post-trip photos first!'),
+                                content: Text(
+                                  'Please capture all 4 post-trip photos first!',
+                                ),
                                 backgroundColor: Colors.red,
                                 behavior: SnackBarBehavior.floating,
                               ),
@@ -503,7 +625,9 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   AppOutlineButton(
                     label: 'NAVIGATE TO PICKUP',
                     icon: Icons.navigation_rounded,
-                    onPressed: () => _openMapNavigation(b.pickup),
+                    onPressed: isLoading
+                        ? null
+                        : () => _openMapNavigation(b.pickup),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -511,14 +635,16 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   AppOutlineButton(
                     label: 'CONTACT CUSTOMER',
                     icon: Icons.call_rounded,
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Customer contact action ready.'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
+                    onPressed: isLoading
+                        ? null
+                        : () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Customer contact action ready.'),
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
                   ),
                 ],
               ],
