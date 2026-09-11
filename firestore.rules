@@ -20,7 +20,7 @@ service cloud.firestore {
       return data.status in ['REQUESTED','SEARCHING','requested','searching'];
     }
     function isPremiumBooking(data) {
-      return data.isPremiumBooking == true || data.serviceTier == 'PREMIUM';
+      return data.isPremiumBooking == true;
     }
     function canSeeBooking(data) {
       return isActivePartner() && (
