@@ -14,6 +14,7 @@ class PartnerPresenceService {
 
   static Timer? _locationTimer;
   static bool _locationUpdateInFlight = false;
+  static const Duration stalePresenceWindow = Duration(minutes: 5);
 
   static DocumentReference<Map<String, dynamic>>? _partnerRef() {
     final uid = _auth.currentUser?.uid;
@@ -35,13 +36,24 @@ class PartnerPresenceService {
       final snapshot = await ref.get();
       if (!snapshot.exists) return false;
 
-      final isOnline = snapshot.data()?['isOnline'] == true;
-      if (isOnline) {
-        _startLocationTracking();
-      } else {
+      final data = snapshot.data() ?? <String, dynamic>{};
+      final isOnline = data['isOnline'] == true;
+      if (!isOnline) {
         _stopLocationTracking();
+        return false;
       }
-      return isOnline;
+
+      final lastSeen = data['lastSeenAt'];
+      if (lastSeen is Timestamp) {
+        final age = DateTime.now().difference(lastSeen.toDate());
+        if (age > stalePresenceWindow) {
+          await setOfflineBestEffort();
+          return false;
+        }
+      }
+
+      _startLocationTracking();
+      return true;
     } catch (_) {
       return null;
     }
@@ -55,6 +67,7 @@ class PartnerPresenceService {
       Position? resolvedPosition = position;
       if (online && resolvedPosition == null) {
         resolvedPosition = await LocationService.getCurrentPosition();
+        if (resolvedPosition == null) return false;
       }
 
       final data = <String, dynamic>{
