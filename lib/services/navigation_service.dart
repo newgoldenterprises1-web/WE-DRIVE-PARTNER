@@ -1,12 +1,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'location_service.dart';
+
 class NavigationService {
   const NavigationService._();
 
   static Future<bool> openDrivingNavigation(String destination) async {
     final trimmed = destination.trim();
     if (trimmed.isEmpty) return false;
+
+    // Request/verify current location permission before asking Google Maps
+    // to start turn-by-turn navigation from the driver's current position.
+    final locationReady = await LocationService.ensurePermission();
+    if (!locationReady) return false;
 
     final encoded = Uri.encodeComponent(trimmed);
     final uri = Uri.parse(
