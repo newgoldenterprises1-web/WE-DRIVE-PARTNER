@@ -6,6 +6,7 @@ import 'dart:io';
 import '../../theme/app_theme.dart';
 import '../../models/booking.dart';
 import '../../services/booking_status_service.dart';
+import '../../services/inspection_service.dart';
 import '../../services/location_service.dart';
 import '../../services/navigation_service.dart';
 
@@ -38,6 +39,17 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   File? postTripRight;
   File? postTripLeft;
 
+  String? preTripFrontUrl;
+  String? preTripBackUrl;
+  String? preTripRightUrl;
+  String? preTripLeftUrl;
+  String? driverSelfieUrl;
+
+  String? postTripFrontUrl;
+  String? postTripBackUrl;
+  String? postTripRightUrl;
+  String? postTripLeftUrl;
+
   final ImagePicker _picker = ImagePicker();
 
   @override
@@ -49,17 +61,20 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
 
   Future<void> _fetchExistingInspectionData() async {
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('bookings')
-          .doc(widget.booking.id)
-          .get();
+      final inspection = await InspectionService.getInspection(widget.booking.id);
+      if (!mounted || inspection == null) return;
 
-      if (doc.exists && mounted) {
-        final data = doc.data();
-        if (data != null) {
-          debugPrint('Existing inspection data retrieved successfully.');
-        }
-      }
+      setState(() {
+        preTripFrontUrl = inspection.preTripFrontUrl;
+        preTripBackUrl = inspection.preTripBackUrl;
+        preTripRightUrl = inspection.preTripRightUrl;
+        preTripLeftUrl = inspection.preTripLeftUrl;
+        driverSelfieUrl = inspection.driverSelfieUrl;
+        postTripFrontUrl = inspection.postTripFrontUrl;
+        postTripBackUrl = inspection.postTripBackUrl;
+        postTripRightUrl = inspection.postTripRightUrl;
+        postTripLeftUrl = inspection.postTripLeftUrl;
+      });
     } catch (e) {
       debugPrint('Error fetching inspection data: $e');
     }
@@ -84,8 +99,6 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     });
 
     try {
-      // Request/check location permission before opening navigation so Google Maps
-      // can use the driver's current position as the navigation origin.
       await LocationService.getCurrentPosition();
       final launched = await NavigationService.openDrivingNavigation(address);
 
@@ -125,15 +138,42 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
       );
       if (image != null) {
         setState(() {
-          if (type == 'Front') preTripFront = File(image.path);
-          if (type == 'Back') preTripBack = File(image.path);
-          if (type == 'Right') preTripRight = File(image.path);
-          if (type == 'Left') preTripLeft = File(image.path);
-          if (type == 'Selfie') driverSelfie = File(image.path);
-          if (type == 'PostFront') postTripFront = File(image.path);
-          if (type == 'PostBack') postTripBack = File(image.path);
-          if (type == 'PostRight') postTripRight = File(image.path);
-          if (type == 'PostLeft') postTripLeft = File(image.path);
+          if (type == 'Front') {
+            preTripFront = File(image.path);
+            preTripFrontUrl = null;
+          }
+          if (type == 'Back') {
+            preTripBack = File(image.path);
+            preTripBackUrl = null;
+          }
+          if (type == 'Right') {
+            preTripRight = File(image.path);
+            preTripRightUrl = null;
+          }
+          if (type == 'Left') {
+            preTripLeft = File(image.path);
+            preTripLeftUrl = null;
+          }
+          if (type == 'Selfie') {
+            driverSelfie = File(image.path);
+            driverSelfieUrl = null;
+          }
+          if (type == 'PostFront') {
+            postTripFront = File(image.path);
+            postTripFrontUrl = null;
+          }
+          if (type == 'PostBack') {
+            postTripBack = File(image.path);
+            postTripBackUrl = null;
+          }
+          if (type == 'PostRight') {
+            postTripRight = File(image.path);
+            postTripRightUrl = null;
+          }
+          if (type == 'PostLeft') {
+            postTripLeft = File(image.path);
+            postTripLeftUrl = null;
+          }
         });
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -156,18 +196,18 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   }
 
   bool get areAllPreTripPhotosCaptured {
-    return preTripFront != null &&
-        preTripBack != null &&
-        preTripRight != null &&
-        preTripLeft != null &&
-        driverSelfie != null;
+    return (preTripFront != null || preTripFrontUrl != null) &&
+        (preTripBack != null || preTripBackUrl != null) &&
+        (preTripRight != null || preTripRightUrl != null) &&
+        (preTripLeft != null || preTripLeftUrl != null) &&
+        (driverSelfie != null || driverSelfieUrl != null);
   }
 
   bool get areAllPostTripPhotosCaptured {
-    return postTripFront != null &&
-        postTripBack != null &&
-        postTripRight != null &&
-        postTripLeft != null;
+    return (postTripFront != null || postTripFrontUrl != null) &&
+        (postTripBack != null || postTripBackUrl != null) &&
+        (postTripRight != null || postTripRightUrl != null) &&
+        (postTripLeft != null || postTripLeftUrl != null);
   }
 
   Future<String?> _uploadImageToStorageWithRetry(
@@ -226,16 +266,27 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
           throw StateError('missing_pre_trip_photos');
         }
 
-        updateData['preTripFrontUrl'] =
-            await _uploadImageToStorageWithRetry(preTripFront!, 'pre_trip');
-        updateData['preTripBackUrl'] =
-            await _uploadImageToStorageWithRetry(preTripBack!, 'pre_trip');
-        updateData['preTripRightUrl'] =
-            await _uploadImageToStorageWithRetry(preTripRight!, 'pre_trip');
-        updateData['preTripLeftUrl'] =
-            await _uploadImageToStorageWithRetry(preTripLeft!, 'pre_trip');
-        updateData['driverSelfieUrl'] =
-            await _uploadImageToStorageWithRetry(driverSelfie!, 'selfies');
+        if (preTripFrontUrl == null) {
+          preTripFrontUrl = await _uploadImageToStorageWithRetry(preTripFront!, 'pre_trip');
+        }
+        if (preTripBackUrl == null) {
+          preTripBackUrl = await _uploadImageToStorageWithRetry(preTripBack!, 'pre_trip');
+        }
+        if (preTripRightUrl == null) {
+          preTripRightUrl = await _uploadImageToStorageWithRetry(preTripRight!, 'pre_trip');
+        }
+        if (preTripLeftUrl == null) {
+          preTripLeftUrl = await _uploadImageToStorageWithRetry(preTripLeft!, 'pre_trip');
+        }
+        if (driverSelfieUrl == null) {
+          driverSelfieUrl = await _uploadImageToStorageWithRetry(driverSelfie!, 'selfies');
+        }
+
+        updateData['preTripFrontUrl'] = preTripFrontUrl;
+        updateData['preTripBackUrl'] = preTripBackUrl;
+        updateData['preTripRightUrl'] = preTripRightUrl;
+        updateData['preTripLeftUrl'] = preTripLeftUrl;
+        updateData['driverSelfieUrl'] = driverSelfieUrl;
 
         if (updateData.values.any((value) => value == null)) {
           throw StateError('pre_trip_upload_failed');
@@ -247,14 +298,23 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
           throw StateError('missing_post_trip_photos');
         }
 
-        updateData['postTripFrontUrl'] =
-            await _uploadImageToStorageWithRetry(postTripFront!, 'post_trip');
-        updateData['postTripBackUrl'] =
-            await _uploadImageToStorageWithRetry(postTripBack!, 'post_trip');
-        updateData['postTripRightUrl'] =
-            await _uploadImageToStorageWithRetry(postTripRight!, 'post_trip');
-        updateData['postTripLeftUrl'] =
-            await _uploadImageToStorageWithRetry(postTripLeft!, 'post_trip');
+        if (postTripFrontUrl == null) {
+          postTripFrontUrl = await _uploadImageToStorageWithRetry(postTripFront!, 'post_trip');
+        }
+        if (postTripBackUrl == null) {
+          postTripBackUrl = await _uploadImageToStorageWithRetry(postTripBack!, 'post_trip');
+        }
+        if (postTripRightUrl == null) {
+          postTripRightUrl = await _uploadImageToStorageWithRetry(postTripRight!, 'post_trip');
+        }
+        if (postTripLeftUrl == null) {
+          postTripLeftUrl = await _uploadImageToStorageWithRetry(postTripLeft!, 'post_trip');
+        }
+
+        updateData['postTripFrontUrl'] = postTripFrontUrl;
+        updateData['postTripBackUrl'] = postTripBackUrl;
+        updateData['postTripRightUrl'] = postTripRightUrl;
+        updateData['postTripLeftUrl'] = postTripLeftUrl;
 
         if (updateData.values.any((value) => value == null)) {
           throw StateError('post_trip_upload_failed');
@@ -270,8 +330,6 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         throw StateError('status_update_rejected');
       }
 
-      // Store inspection URLs only after the atomic status/ownership transition
-      // succeeds, so rejected transitions do not mutate the booking record.
       if (updateData.isNotEmpty) {
         await FirebaseFirestore.instance
             .collection('bookings')
@@ -329,8 +387,21 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     }
   }
 
-  Widget _buildPhotoRow(String title, File? file, String typeKey) {
-    final isCaptured = file != null;
+  Widget _buildPhotoRow(
+    String title,
+    File? file,
+    String? remoteUrl,
+    String typeKey,
+  ) {
+    final isCaptured = file != null || (remoteUrl != null && remoteUrl.isNotEmpty);
+
+    ImageProvider? imageProvider;
+    if (file != null) {
+      imageProvider = FileImage(file);
+    } else if (remoteUrl != null && remoteUrl.isNotEmpty) {
+      imageProvider = NetworkImage(remoteUrl);
+    }
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.all(8),
@@ -355,11 +426,16 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                   margin: const EdgeInsets.only(right: 10),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(6),
-                    image: DecorationImage(
-                      image: FileImage(file),
-                      fit: BoxFit.cover,
-                    ),
+                    image: imageProvider == null
+                        ? null
+                        : DecorationImage(
+                            image: imageProvider,
+                            fit: BoxFit.cover,
+                          ),
                   ),
+                  child: imageProvider == null
+                      ? const Icon(Icons.broken_image_outlined, size: 20)
+                      : null,
                 )
               else
                 Container(
@@ -518,12 +594,12 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                           style: TextStyle(color: AppColors.muted, fontSize: 12),
                         ),
                         const SizedBox(height: 12),
-                        _buildPhotoRow('Front Side', preTripFront, 'Front'),
-                        _buildPhotoRow('Back Side', preTripBack, 'Back'),
-                        _buildPhotoRow('Right Side', preTripRight, 'Right'),
-                        _buildPhotoRow('Left Side', preTripLeft, 'Left'),
+                        _buildPhotoRow('Front Side', preTripFront, preTripFrontUrl, 'Front'),
+                        _buildPhotoRow('Back Side', preTripBack, preTripBackUrl, 'Back'),
+                        _buildPhotoRow('Right Side', preTripRight, preTripRightUrl, 'Right'),
+                        _buildPhotoRow('Left Side', preTripLeft, preTripLeftUrl, 'Left'),
                         const Divider(height: 24),
-                        _buildPhotoRow('Driver Selfie', driverSelfie, 'Selfie'),
+                        _buildPhotoRow('Driver Selfie', driverSelfie, driverSelfieUrl, 'Selfie'),
                       ],
                     ),
                   ),
@@ -548,10 +624,10 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                           style: TextStyle(color: AppColors.muted, fontSize: 12),
                         ),
                         const SizedBox(height: 12),
-                        _buildPhotoRow('Front Side', postTripFront, 'PostFront'),
-                        _buildPhotoRow('Back Side', postTripBack, 'PostBack'),
-                        _buildPhotoRow('Right Side', postTripRight, 'PostRight'),
-                        _buildPhotoRow('Left Side', postTripLeft, 'PostLeft'),
+                        _buildPhotoRow('Front Side', postTripFront, postTripFrontUrl, 'PostFront'),
+                        _buildPhotoRow('Back Side', postTripBack, postTripBackUrl, 'PostBack'),
+                        _buildPhotoRow('Right Side', postTripRight, postTripRightUrl, 'PostRight'),
+                        _buildPhotoRow('Left Side', postTripLeft, postTripLeftUrl, 'PostLeft'),
                       ],
                     ),
                   ),
