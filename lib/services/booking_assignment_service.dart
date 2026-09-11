@@ -8,12 +8,21 @@ class BookingAssignmentService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || bookingId.trim().isEmpty) return false;
 
-    final ref = FirebaseFirestore.instance.collection('bookings').doc(bookingId.trim());
+    final firestore = FirebaseFirestore.instance;
+    final ref = firestore.collection('bookings').doc(bookingId.trim());
+    final partnerRef = firestore.collection('partners').doc(user.uid);
 
     try {
-      await FirebaseFirestore.instance.runTransaction((transaction) async {
+      await firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(ref);
+        final partnerSnapshot = await transaction.get(partnerRef);
+
         if (!snapshot.exists) throw StateError('missing');
+
+        final partnerData = partnerSnapshot.data() ?? <String, dynamic>{};
+        if (partnerData['isOnline'] != true) {
+          throw StateError('offline');
+        }
 
         final data = snapshot.data() ?? <String, dynamic>{};
         final status = (data['status'] ?? 'SEARCHING').toString().toUpperCase();
