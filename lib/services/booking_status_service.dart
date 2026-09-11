@@ -60,13 +60,17 @@ class BookingStatusService {
             throw StateError('assigned');
           }
 
-          transaction.set(ref, {
-            'status': 'ACCEPTED',
-            'partnerId': user.uid,
-            'acceptedBy': user.uid,
-            'acceptedAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true));
+          transaction.set(
+            ref,
+            {
+              'status': 'ACCEPTED',
+              'partnerId': user.uid,
+              'acceptedBy': user.uid,
+              'acceptedAt': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          );
           return;
         }
 
@@ -79,8 +83,19 @@ class BookingStatusService {
           'updatedAt': FieldValue.serverTimestamp(),
         };
 
-        if (target == 'COMPLETED') {
-          update['completedAt'] = FieldValue.serverTimestamp();
+        switch (target) {
+          case 'ARRIVING':
+            update['arrivingAt'] = FieldValue.serverTimestamp();
+            break;
+          case 'ARRIVED':
+            update['arrivedAt'] = FieldValue.serverTimestamp();
+            break;
+          case 'TRIP_STARTED':
+            update['tripStartedAt'] = FieldValue.serverTimestamp();
+            break;
+          case 'COMPLETED':
+            update['completedAt'] = FieldValue.serverTimestamp();
+            break;
         }
 
         transaction.set(ref, update, SetOptions(merge: true));
