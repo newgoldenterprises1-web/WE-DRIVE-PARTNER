@@ -1,1 +1,31 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"we-drive-4315a","appId":"1:35696955893:android:4e0a6058ac8a0cbdaad0bc","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"we-drive-4315a","configurations":{"android":"1:35696955893:android:4e0a6058ac8a0cbdaad0bc","ios":"1:35696955893:ios:bb62d48b7267ef7daad0bc","macos":"1:35696955893:ios:bb62d48b7267ef7daad0bc","web":"1:35696955893:web:48c13d9a517d9136aad0bc","windows":"1:35696955893:web:7c865513fababbdcaad0bc"}}}}}}
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "we-drive-4315a",
+          "appId": "1:35696955893:android:4e0a6058ac8a0cbdaad0bc",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "we-drive-4315a",
+          "configurations": {
+            "android": "1:35696955893:android:4e0a6058ac8a0cbdaad0bc",
+            "ios": "1:35696955893:ios:bb62d48b7267ef7daad0bc",
+            "macos": "1:35696955893:ios:bb62d48b7267ef7daad0bc",
+            "web": "1:35696955893:web:48c13d9a517d9136aad0bc",
+            "windows": "1:35696955893:web:7c865513fababbdcaad0bc"
+          }
+        }
+      }
+    }
+  }
+}
