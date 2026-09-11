@@ -6,7 +6,7 @@
       "fields": [
         {
           "fieldPath": "status",
-          "arrayConfig": "CONTAINS"
+          "order": "ASCENDING"
         },
         {
           "fieldPath": "createdAt",
