@@ -74,7 +74,11 @@ class BookingStatusService {
           return;
         }
 
-        if (partnerId != user.uid) {
+        if (partnerId != user.uid && target != 'CANCELLED') {
+          throw StateError('not_owner');
+        }
+
+        if (target == 'CANCELLED' && partnerId.isNotEmpty && partnerId != user.uid) {
           throw StateError('not_owner');
         }
 
@@ -95,6 +99,10 @@ class BookingStatusService {
             break;
           case 'COMPLETED':
             update['completedAt'] = FieldValue.serverTimestamp();
+            break;
+          case 'CANCELLED':
+            update['cancelledBy'] = user.uid;
+            update['cancelledAt'] = FieldValue.serverTimestamp();
             break;
         }
 
