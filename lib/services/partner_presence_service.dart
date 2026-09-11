@@ -1,11 +1,15 @@
 import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
+
+import '../data/app_data.dart';
 import 'location_service.dart';
 
 class PartnerPresenceService {
   PartnerPresenceService._();
+
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static Timer? _locationTimer;
@@ -18,11 +22,14 @@ class PartnerPresenceService {
     return _firestore.collection('partners').doc(uid);
   }
 
-  static bool _isActive(Map<String, dynamic> data) => data['accountStatus'] == null || data['accountStatus'] == 'ACTIVE';
-
   static String _dateKey([DateTime? date]) {
-    final value = (date ?? DateTime.now()).toLocal();
-    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+    final value = date ?? DateTime.now();
+    final local = value.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
+  }
+
+  static void _restorePartnerPlan(Map<String, dynamic> data) {
+    AppData.isPremiumPartner = data['isPremium'] == true;
   }
 
   static Future<bool?> getOnlineStatus() async {
@@ -32,11 +39,13 @@ class PartnerPresenceService {
       final snapshot = await ref.get();
       if (!snapshot.exists) return false;
       final data = snapshot.data() ?? <String, dynamic>{};
-      if (!_isActive(data)) {
+      _restorePartnerPlan(data);
+      if (data['accountStatus'] != 'ACTIVE') {
         _stopLocationTracking();
         return false;
       }
-      if (data['isOnline'] != true) {
+      final isOnline = data['isOnline'] == true;
+      if (!isOnline) {
         _stopLocationTracking();
         return false;
       }
@@ -58,7 +67,8 @@ class PartnerPresenceService {
     try {
       final current = await ref.get();
       final currentData = current.data() ?? <String, dynamic>{};
-      if (online && !_isActive(currentData)) return false;
+      _restorePartnerPlan(currentData);
+      if (online && currentData['accountStatus'] != 'ACTIVE') return false;
 
       Position? resolvedPosition = position;
       if (online && resolvedPosition == null) {
@@ -66,7 +76,11 @@ class PartnerPresenceService {
         if (resolvedPosition == null) return false;
       }
 
-      final data = <String, dynamic>{'isOnline': online, 'updatedAt': FieldValue.serverTimestamp(), 'lastSeenAt': FieldValue.serverTimestamp()};
+      final data = <String, dynamic>{
+        'isOnline': online,
+        'updatedAt': FieldValue.serverTimestamp(),
+        'lastSeenAt': FieldValue.serverTimestamp(),
+      };
       if (online) {
         final todayKey = _dateKey();
         final currentDateKey = (currentData['onlineDateKey'] ?? '').toString();
@@ -92,6 +106,7 @@ class PartnerPresenceService {
         data['latitude'] = resolvedPosition.latitude;
         data['longitude'] = resolvedPosition.longitude;
       }
+
       await ref.set(data, SetOptions(merge: true));
       if (online) _startLocationTracking(); else _stopLocationTracking();
       return true;
@@ -104,7 +119,14 @@ class PartnerPresenceService {
     final ref = _partnerRef();
     if (ref == null) return false;
     try {
-      await ref.set({'isOnline': true, 'location': GeoPoint(position.latitude, position.longitude), 'latitude': position.latitude, 'longitude': position.longitude, 'lastSeenAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
+      await ref.set({
+        'isOnline': true,
+        'location': GeoPoint(position.latitude, position.longitude),
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'lastSeenAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
       return true;
     } catch (_) {
       return false;
@@ -128,7 +150,8 @@ class PartnerPresenceService {
     if (ref == null) return;
     _locationUpdateInFlight = true;
     try {
-      if (await getOnlineStatusWithoutStartingTracking() != true) {
+      final isOnline = await getOnlineStatusWithoutStartingTracking();
+      if (isOnline != true) {
         _stopLocationTracking();
         return;
       }
@@ -147,7 +170,8 @@ class PartnerPresenceService {
       final snapshot = await ref.get();
       if (!snapshot.exists) return false;
       final data = snapshot.data() ?? <String, dynamic>{};
-      return _isActive(data) && data['isOnline'] == true;
+      _restorePartnerPlan(data);
+      return data['accountStatus'] == 'ACTIVE' && data['isOnline'] == true;
     } catch (_) {
       return null;
     }
@@ -159,14 +183,23 @@ class PartnerPresenceService {
     if (ref == null) return;
     try {
       final current = await ref.get();
-      final data = current.data() ?? <String, dynamic>{};
-      final started = data['onlineStartedAt'];
-      var minutes = data['onlineMinutesToday'] is num ? (data['onlineMinutesToday'] as num).toInt() : 0;
+      final currentData = current.data() ?? <String, dynamic>{};
+      _restorePartnerPlan(currentData);
+      final started = currentData['onlineStartedAt'];
+      var minutes = currentData['onlineMinutesToday'] is num ? (currentData['onlineMinutesToday'] as num).toInt() : 0;
       if (started is Timestamp) {
         final elapsed = DateTime.now().difference(started.toDate()).inMinutes;
         if (elapsed > 0) minutes += elapsed;
       }
-      await ref.set({'isOnline': false, 'onlineMinutesToday': minutes, 'onlineDateKey': _dateKey(), 'onlineStartedAt': FieldValue.delete(), 'lastSeenAt': FieldValue.serverTimestamp(), 'updatedAt': FieldValue.serverTimestamp()}, SetOptions(merge: true));
-    } catch (_) {}
+      await ref.set({
+        'isOnline': false,
+        'onlineMinutesToday': minutes,
+        'onlineDateKey': _dateKey(),
+        'onlineStartedAt': FieldValue.delete(),
+        'lastSeenAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {
+    }
   }
 }
