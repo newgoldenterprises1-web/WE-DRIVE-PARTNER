@@ -83,6 +83,18 @@ service cloud.firestore {
           )
           ||
           (
+            isPendingBooking(resource.data)
+            && request.resource.data.status == 'CANCELLED'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'cancelledBy',
+              'cancelledAt',
+              'updatedAt'
+            ])
+            && request.resource.data.cancelledBy == request.auth.uid
+          )
+          ||
+          (
             resource.data.partnerId == request.auth.uid
             && request.resource.data.partnerId == resource.data.partnerId
             && request.resource.data.acceptedBy == resource.data.acceptedBy
@@ -96,7 +108,9 @@ service cloud.firestore {
               'arrivingAt',
               'arrivedAt',
               'tripStartedAt',
-              'completedAt'
+              'completedAt',
+              'cancelledBy',
+              'cancelledAt'
             ])
           )
           ||
