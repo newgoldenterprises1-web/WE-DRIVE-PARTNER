@@ -20,20 +20,15 @@ class BookingAssignmentService {
         if (!snapshot.exists) throw StateError('missing');
 
         final partnerData = partnerSnapshot.data() ?? <String, dynamic>{};
-        if (partnerData['isOnline'] != true) {
-          throw StateError('offline');
-        }
+        if (partnerData['accountStatus'] != 'ACTIVE') throw StateError('inactive');
+        if (partnerData['isOnline'] != true) throw StateError('offline');
 
         final data = snapshot.data() ?? <String, dynamic>{};
         final status = (data['status'] ?? 'SEARCHING').toString().toUpperCase();
         final partnerId = (data['partnerId'] ?? '').toString().trim();
 
-        if (partnerId.isNotEmpty && partnerId != user.uid) {
-          throw StateError('assigned');
-        }
-        if (status != 'REQUESTED' && status != 'SEARCHING') {
-          throw StateError('unavailable');
-        }
+        if (partnerId.isNotEmpty && partnerId != user.uid) throw StateError('assigned');
+        if (status != 'REQUESTED' && status != 'SEARCHING') throw StateError('unavailable');
 
         transaction.set(ref, {
           'status': 'ACCEPTED',
