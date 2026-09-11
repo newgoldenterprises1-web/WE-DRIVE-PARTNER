@@ -4,6 +4,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 class BookingAssignmentService {
   const BookingAssignmentService._();
 
+  static bool _isPremiumBooking(Map<String, dynamic> data) {
+    return data['isPremiumBooking'] == true ||
+        (data['serviceTier'] ?? '').toString().toUpperCase() == 'PREMIUM';
+  }
+
   static Future<bool> acceptBooking(String bookingId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || bookingId.trim().isEmpty) return false;
@@ -16,18 +21,23 @@ class BookingAssignmentService {
       await firestore.runTransaction((transaction) async {
         final snapshot = await transaction.get(ref);
         final partnerSnapshot = await transaction.get(partnerRef);
+
         if (!snapshot.exists) throw StateError('missing');
 
         final partnerData = partnerSnapshot.data() ?? <String, dynamic>{};
-        final accountStatus = partnerData['accountStatus'];
-        if (accountStatus != null && accountStatus != 'ACTIVE') throw StateError('inactive');
+        if (partnerData['accountStatus'] != 'ACTIVE') throw StateError('inactive');
         if (partnerData['isOnline'] != true) throw StateError('offline');
 
         final data = snapshot.data() ?? <String, dynamic>{};
         final status = (data['status'] ?? 'SEARCHING').toString().toUpperCase();
         final partnerId = (data['partnerId'] ?? '').toString().trim();
+
         if (partnerId.isNotEmpty && partnerId != user.uid) throw StateError('assigned');
         if (status != 'REQUESTED' && status != 'SEARCHING') throw StateError('unavailable');
+
+        if (_isPremiumBooking(data) && partnerData['isPremium'] != true) {
+          throw StateError('premium_required');
+        }
 
         transaction.set(ref, {
           'status': 'ACCEPTED',
