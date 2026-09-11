@@ -1,0 +1,71 @@
+name: Wire partner presence into HomeScreen
+
+on:
+  push:
+    branches:
+      - production-hardening
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: production-hardening
+          fetch-depth: 1
+
+      - name: Patch HomeScreen
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('lib/screens/home/home_screen.dart')
+          text = path.read_text()
+
+          text = text.replace(
+              "import '../../data/app_data.dart';\n",
+              "import '../../data/app_data.dart';\nimport '../../services/partner_presence_service.dart';\n",
+              1,
+          )
+
+          text = text.replace(
+              "  bool online = true;\n",
+              "  bool online = false;\n  bool presenceLoading = true;\n\n  @override\n  void initState() {\n    super.initState();\n    _restorePartnerPresence();\n  }\n\n  Future<void> _restorePartnerPresence() async {\n    final saved = await PartnerPresenceService.getOnlineStatus();\n    if (!mounted) return;\n    setState(() {\n      online = saved ?? false;\n      presenceLoading = false;\n    });\n  }\n\n  Future<void> _setPartnerPresence(bool value) async {\n    if (presenceLoading) return;\n\n    final previous = online;\n    setState(() {\n      online = value;\n      presenceLoading = true;\n    });\n\n    final success = await PartnerPresenceService.setOnline(value);\n    if (!mounted) return;\n\n    if (!success) {\n      setState(() {\n        online = previous;\n      });\n      ScaffoldMessenger.of(context).showSnackBar(\n        const SnackBar(\n          content: Text('Could not update availability. Please try again.'),\n          backgroundColor: Colors.red,\n          behavior: SnackBarBehavior.floating,\n        ),\n      );\n    }\n\n    setState(() {\n      presenceLoading = false;\n    });\n  }\n",
+              1,
+          )
+
+          text = text.replace(
+              "            onChanged: (value) {\n              setState(() {\n                online = value;\n              });\n            },\n",
+              "            onChanged: presenceLoading ? null : _setPartnerPresence,\n",
+              1,
+          )
+
+          text = text.replace(
+              "            value: online,\n",
+              "            value: online,\n",
+              1,
+          )
+
+          if "import '../../services/partner_presence_service.dart';" not in text:
+              raise SystemExit('presence import patch failed')
+          if "_restorePartnerPresence" not in text:
+              raise SystemExit('presence restore patch failed')
+          if "onChanged: presenceLoading ? null : _setPartnerPresence" not in text:
+              raise SystemExit('presence toggle patch failed')
+
+          path.write_text(text)
+          PY
+
+      - name: Commit and remove helper workflow
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add lib/screens/home/home_screen.dart .github/workflows/wire-partner-presence.yml
+          git commit -m "Wire partner online offline presence"
+          git push origin production-hardening
