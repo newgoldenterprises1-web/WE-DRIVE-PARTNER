@@ -6,6 +6,11 @@ admin.initializeApp();
 
 const db = admin.firestore();
 const { createPaymentOrder, verifyPayment } = require('./payment');
+const { registerFcmToken } = require('./fcm');
+const {
+  notifyPartnerOnBookingCreate,
+  notifyPartnerOnBookingUpdate,
+} = require('./notifications');
 
 const PENDING_STATUSES = new Set(['REQUESTED', 'SEARCHING']);
 const STALE_AFTER_MS = 15 * 60 * 1000;
@@ -32,6 +37,9 @@ function isStale(data, nowMs) {
 
 exports.createPaymentOrder = createPaymentOrder;
 exports.verifyPayment = verifyPayment;
+exports.registerFcmToken = registerFcmToken;
+exports.notifyPartnerOnBookingCreate = notifyPartnerOnBookingCreate;
+exports.notifyPartnerOnBookingUpdate = notifyPartnerOnBookingUpdate;
 
 exports.expireStaleBookings = onSchedule(
   {
