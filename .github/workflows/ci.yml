@@ -14,7 +14,7 @@ on:
 
 jobs:
   flutter:
-    name: Flutter analyze and test
+    name: Flutter analyze, test and debug build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -34,6 +34,17 @@ jobs:
 
       - name: Flutter test
         run: flutter test
+
+      - name: Build Android debug APK
+        run: flutter build apk --debug
+
+      - name: Upload debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: we-drive-partner-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
 
   functions:
     name: Functions syntax check
