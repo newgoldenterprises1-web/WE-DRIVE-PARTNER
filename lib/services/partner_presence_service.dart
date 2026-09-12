@@ -14,6 +14,7 @@ class PartnerPresenceService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static Timer? _locationTimer;
   static bool _locationUpdateInFlight = false;
+  static bool _testOnline = false;
   static const Duration stalePresenceWindow = Duration(minutes: 5);
 
   static DocumentReference<Map<String, dynamic>>? _partnerRef() {
@@ -35,6 +36,10 @@ class PartnerPresenceService {
   static Future<bool?> getOnlineStatus() async {
     final ref = _partnerRef();
     if (ref == null) return null;
+
+    // Development-only session simulation. No Firestore write is performed.
+    if (AppData.testPartnerActivated) return _testOnline;
+
     try {
       final snapshot = await ref.get();
       if (!snapshot.exists) return false;
@@ -64,6 +69,13 @@ class PartnerPresenceService {
   static Future<bool> setOnline(bool online, {Position? position}) async {
     final ref = _partnerRef();
     if (ref == null) return false;
+
+    // Development-only session simulation. Security rules remain unchanged.
+    if (AppData.testPartnerActivated) {
+      _testOnline = online;
+      return true;
+    }
+
     try {
       final current = await ref.get();
       final currentData = current.data() ?? <String, dynamic>{};
@@ -118,6 +130,8 @@ class PartnerPresenceService {
   static Future<bool> refreshLocation(Position position) async {
     final ref = _partnerRef();
     if (ref == null) return false;
+    if (AppData.testPartnerActivated) return _testOnline;
+
     try {
       await ref.set({
         'isOnline': true,
@@ -146,6 +160,7 @@ class PartnerPresenceService {
 
   static Future<void> _updateLocationNow() async {
     if (_locationUpdateInFlight) return;
+    if (AppData.testPartnerActivated) return;
     final ref = _partnerRef();
     if (ref == null) return;
     _locationUpdateInFlight = true;
@@ -166,6 +181,8 @@ class PartnerPresenceService {
   static Future<bool?> getOnlineStatusWithoutStartingTracking() async {
     final ref = _partnerRef();
     if (ref == null) return null;
+    if (AppData.testPartnerActivated) return _testOnline;
+
     try {
       final snapshot = await ref.get();
       if (!snapshot.exists) return false;
@@ -178,8 +195,13 @@ class PartnerPresenceService {
   }
 
   static Future<void> setOfflineBestEffort() async {
-    final ref = _partnerRef();
     _stopLocationTracking();
+    if (AppData.testPartnerActivated) {
+      _testOnline = false;
+      return;
+    }
+
+    final ref = _partnerRef();
     if (ref == null) return;
     try {
       final current = await ref.get();
