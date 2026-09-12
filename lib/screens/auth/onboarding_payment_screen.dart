@@ -24,12 +24,28 @@ class _OnboardingPaymentScreenState extends State<OnboardingPaymentScreen> {
     if (!mounted) return;
 
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('₹299 test payment completed. Live activation is disabled in Test Mode.'),
-          backgroundColor: AppColors.navy,
-        ),
-      );
+      if (RazorpayPaymentService.testMode &&
+          RazorpayPaymentService.testOnboardingActivated) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('₹299 dummy payment completed. Test activation enabled for this app session.'),
+            backgroundColor: AppColors.navy,
+          ),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        if (!mounted) return;
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const HomeScreen()),
+          (_) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('₹299 payment completed.'),
+            backgroundColor: AppColors.navy,
+          ),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -39,7 +55,7 @@ class _OnboardingPaymentScreenState extends State<OnboardingPaymentScreen> {
       );
     }
 
-    setState(() => processing = false);
+    if (mounted) setState(() => processing = false);
   }
 
   Future<void> _signOut() async {
@@ -119,7 +135,7 @@ class _OnboardingPaymentScreenState extends State<OnboardingPaymentScreen> {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  'Development mode: this payment is simulated safely. No real money is charged and no live activation is granted until the server-side payment verification is configured.',
+                  'Development mode: this payment is simulated safely. No real money is charged. Test activation lasts only for this app session; no Firestore payment or live account activation is performed.',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.muted, fontSize: 11, height: 1.4),
                 ),
