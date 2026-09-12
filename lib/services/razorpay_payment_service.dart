@@ -12,10 +12,14 @@ class RazorpayPaymentService {
   static final RazorpayPaymentService instance = RazorpayPaymentService._();
 
   // Development mode: simulates a successful payment locally. It does not
-  // charge money and never changes Premium/onboarding status in Firestore.
-  // Set to false only after the server-side Razorpay Test Mode order and
+  // charge money or write payment/activation state to Firestore.
+  // Set to false only after the server-side Razorpay Test/Live order and
   // verification endpoints are configured.
   static const bool testMode = true;
+
+  // Session-only development activation. This is deliberately kept in memory
+  // so Test Mode can open the partner UI without weakening Firestore rules.
+  static bool testOnboardingActivated = false;
 
   static const String _functionBaseUrl =
       'https://asia-south1-we-drive-4315a.cloudfunctions.net';
@@ -38,8 +42,10 @@ class RazorpayPaymentService {
     if (user == null) return false;
 
     if (testMode) {
-      // Safe local simulation only. No Firestore activation is performed.
       await Future<void>.delayed(const Duration(milliseconds: 700));
+      if (normalizedPlan == 'ONBOARDING') {
+        testOnboardingActivated = true;
+      }
       return true;
     }
 
