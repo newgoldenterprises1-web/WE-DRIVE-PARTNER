@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import '../../theme/app_theme.dart';
 import '../../models/booking.dart';
@@ -27,6 +28,7 @@ class BookingDetailScreen extends StatefulWidget {
 class _BookingDetailScreenState extends State<BookingDetailScreen> {
   late String status;
   bool isLoading = false;
+  String? customerPhone;
 
   File? preTripFront;
   File? preTripBack;
@@ -57,6 +59,69 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     super.initState();
     status = widget.booking.status.toUpperCase();
     _fetchExistingInspectionData();
+    _fetchCustomerPhone();
+  }
+
+  Future<void> _fetchCustomerPhone() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('bookings')
+          .doc(widget.booking.id)
+          .get();
+      if (!mounted || !snapshot.exists) return;
+
+      final data = snapshot.data() ?? <String, dynamic>{};
+      final rawPhone = data['customerPhone'] ??
+          data['customerMobile'] ??
+          data['phone'] ??
+          data['mobile'];
+      final normalized = rawPhone?.toString().trim();
+      if (normalized == null || normalized.isEmpty) return;
+
+      setState(() {
+        customerPhone = normalized;
+      });
+    } catch (e) {
+      debugPrint('Error fetching customer phone: $e');
+    }
+  }
+
+  Future<void> _contactCustomer() async {
+    final phone = customerPhone?.trim() ?? '';
+    if (phone.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Customer phone number is unavailable.'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final uri = Uri(scheme: 'tel', path: phone);
+    try {
+      final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the phone dialer.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not start the call: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _fetchExistingInspectionData() async {
@@ -710,18 +775,13 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
                 ],
                 if (showContact) ...[
                   AppOutlineButton(
-                    label: 'CONTACT CUSTOMER',
+                    label: customerPhone == null
+                        ? 'CONTACT CUSTOMER'
+                        : 'CALL CUSTOMER',
                     icon: Icons.call_rounded,
                     onPressed: isLoading
                         ? null
-                        : () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Customer contact action ready.'),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
+                        : _contactCustomer,
                   ),
                 ],
               ],
