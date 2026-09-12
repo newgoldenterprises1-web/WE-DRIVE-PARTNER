@@ -5,6 +5,7 @@ const admin = require('firebase-admin');
 admin.initializeApp();
 
 const db = admin.firestore();
+const { createPaymentOrder, verifyPayment } = require('./payment');
 
 const PENDING_STATUSES = new Set(['REQUESTED', 'SEARCHING']);
 const STALE_AFTER_MS = 15 * 60 * 1000;
@@ -28,6 +29,9 @@ function isStale(data, nowMs) {
   if (!createdAt) return false;
   return nowMs - createdAt.getTime() >= STALE_AFTER_MS;
 }
+
+exports.createPaymentOrder = createPaymentOrder;
+exports.verifyPayment = verifyPayment;
 
 exports.expireStaleBookings = onSchedule(
   {
