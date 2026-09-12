@@ -1,29 +1,31 @@
 import 'dart:async';
+import 'dart:convert';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Notification payloads are displayed by Firebase Messaging automatically
-  // when the app is in the background/terminated. Data is intentionally kept
-  // lightweight here so background delivery remains reliable.
+  // Firebase displays notification payloads automatically when the app is
+  // backgrounded or terminated. Keep background handling lightweight.
 }
 
 class NotificationService {
   NotificationService._();
 
   static final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static GlobalKey<NavigatorState>? _navigatorKey;
   static StreamSubscription<String>? _tokenSubscription;
   static StreamSubscription<User?>? _authSubscription;
   static StreamSubscription<RemoteMessage>? _foregroundSubscription;
   static bool _initialized = false;
+
+  static const String _registerTokenUrl =
+      'https://asia-south1-we-drive-4315.cloudfunctions.net/registerFcmToken';
 
   static Future<void> initialize(GlobalKey<NavigatorState> navigatorKey) async {
     if (_initialized) return;
@@ -41,7 +43,6 @@ class NotificationService {
         sound: true,
         provisional: false,
       );
-
       debugPrint('Notification permission: ${settings.authorizationStatus}');
     } catch (error, stackTrace) {
       debugPrint('Notification permission request failed: $error\n$stackTrace');
@@ -90,16 +91,23 @@ class NotificationService {
     if (user == null) return;
 
     try {
-      await _firestore.collection('partners').doc(user.uid).set(
-        {
-          'fcmToken': token,
-          'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
+      final idToken = await user.getIdToken();
+      if (idToken == null || idToken.isEmpty) return;
+
+      final response = await http.post(
+        Uri.parse(_registerTokenUrl),
+        headers: {
+          'Authorization': 'Bearer $idToken',
+          'Content-Type': 'application/json',
         },
-        SetOptions(merge: true),
+        body: jsonEncode({'token': token}),
       );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint('FCM token registration returned ${response.statusCode}.');
+      }
     } catch (error, stackTrace) {
-      debugPrint('FCM token save failed: $error\n$stackTrace');
+      debugPrint('FCM token registration failed: $error\n$stackTrace');
     }
   }
 
@@ -118,12 +126,6 @@ class NotificationService {
         content: Text('$title\n$body'),
         duration: const Duration(seconds: 5),
         behavior: SnackBarBehavior.floating,
-        action: message.data['bookingId'] != null
-            ? SnackBarAction(
-                label: 'VIEW',
-                onPressed: () {},
-              )
-            : null,
       ),
     );
   }
