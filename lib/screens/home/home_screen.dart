@@ -165,19 +165,24 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, snapshot) {
           final allDocs = snapshot.data?.docs ?? <QueryDocumentSnapshot<Map<String, dynamic>>>[];
           final docs = online
-              ? allDocs
-                  .where((doc) => (doc.data()['partnerId'] ?? '').toString().trim().isEmpty)
-                  .toList()
-                ..sort((a, b) {
-                  final aCreated = a.data()['createdAt'];
-                  final bCreated = b.data()['createdAt'];
-                  if (aCreated is Timestamp && bCreated is Timestamp) {
-                    return bCreated.compareTo(aCreated);
-                  }
-                  if (aCreated is Timestamp) return -1;
-                  if (bCreated is Timestamp) return 1;
-                  return 0;
-                })
+              ? (allDocs
+                    .where(
+                      (doc) => (doc.data()['partnerId'] ?? '')
+                          .toString()
+                          .trim()
+                          .isEmpty,
+                    )
+                    .toList()
+                  ..sort((a, b) {
+                    final aCreated = a.data()['createdAt'];
+                    final bCreated = b.data()['createdAt'];
+                    if (aCreated is Timestamp && bCreated is Timestamp) {
+                      return bCreated.compareTo(aCreated);
+                    }
+                    if (aCreated is Timestamp) return -1;
+                    if (bCreated is Timestamp) return 1;
+                    return 0;
+                  }))
               : <QueryDocumentSnapshot<Map<String, dynamic>>>[];
 
           final visibleDocs = docs.take(5).toList();
