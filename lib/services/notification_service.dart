@@ -51,7 +51,7 @@ class NotificationService {
     try {
       final token = await _messaging.getToken();
       if (token != null && token.isNotEmpty) {
-        await _saveToken(token);
+        await _registerToken(token);
       }
     } catch (error, stackTrace) {
       debugPrint('FCM token fetch failed: $error\n$stackTrace');
@@ -59,17 +59,17 @@ class NotificationService {
 
     _tokenSubscription = _messaging.onTokenRefresh.listen((token) async {
       if (token.trim().isEmpty) return;
-      await _saveToken(token.trim());
+      await _registerToken(token.trim());
     });
 
     _authSubscription = _auth.authStateChanges().listen((_) async {
       try {
         final token = await _messaging.getToken();
         if (token != null && token.isNotEmpty) {
-          await _saveToken(token);
+          await _registerToken(token);
         }
       } catch (error, stackTrace) {
-        debugPrint('FCM token refresh after auth change failed: $error\n$stackTrace');
+        debugPrint('FCM token registration after auth change failed: $error\n$stackTrace');
       }
     });
 
@@ -84,11 +84,12 @@ class NotificationService {
     _authSubscription = null;
     _foregroundSubscription = null;
     _initialized = false;
+    _navigatorKey = null;
   }
 
-  static Future<void> _saveToken(String token) async {
+  static Future<void> _registerToken(String token) async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null || token.trim().isEmpty) return;
 
     try {
       final idToken = await user.getIdToken();
@@ -100,7 +101,7 @@ class NotificationService {
           'Authorization': 'Bearer $idToken',
           'Content-Type': 'application/json',
         },
-        body: jsonEncode({'token': token}),
+        body: jsonEncode({'token': token.trim()}),
       );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
