@@ -1,8 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../services/location_service.dart';
 import '../../services/partner_presence_service.dart';
 import '../../theme/app_theme.dart';
+import '../auth/login_screen.dart';
+import '../support/support_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -13,6 +16,58 @@ class ProfileScreen extends StatelessWidget {
       if (value != null && value.isNotEmpty) return value;
     }
     return fallback;
+  }
+
+  Future<void> _showStatusMessage(BuildContext context, String message) async {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _toggleOnline(BuildContext context, bool value, Map<String, dynamic> data) async {
+    final status = _text(data, ['accountStatus', 'verificationStatus'], 'PENDING').toUpperCase();
+
+    if (value && status != 'ACTIVE') {
+      await _showStatusMessage(
+        context,
+        status == 'UNDER_REVIEW'
+            ? 'Your partner account is under review. You can go online after verification is approved.'
+            : 'Your partner account is not active yet. Please complete verification first.',
+      );
+      return;
+    }
+
+    if (value) {
+      final locationReady = await LocationService.ensurePermission();
+      if (!locationReady) {
+        await _showStatusMessage(context, 'Please enable Location/GPS permission to go online.');
+        return;
+      }
+
+      final success = await PartnerPresenceService.setOnline(true);
+      if (!success) {
+        await _showStatusMessage(context, 'Could not update availability. Please try again.');
+      }
+      return;
+    }
+
+    await PartnerPresenceService.setOfflineBestEffort();
+    await _showStatusMessage(context, 'You are now offline.');
+  }
+
+  Future<void> _logout(BuildContext context) async {
+    try {
+      await PartnerPresenceService.setOfflineBestEffort();
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {
+      await FirebaseAuth.instance.signOut();
+    }
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   @override
@@ -36,10 +91,9 @@ class ProfileScreen extends StatelessWidget {
         final verificationUpper = verification.toUpperCase();
         final isVerified = verificationUpper == 'VERIFIED' || verificationUpper == 'ACTIVE';
         final isOnline = data['isOnline'] == true;
+        final canGoOnline = verificationUpper == 'ACTIVE';
         final vehicle = _text(data, ['vehicleModel', 'vehicleType'], 'Vehicle details unavailable');
         final registration = _text(data, ['vehicleNumber', 'registrationNumber'], 'Registration unavailable');
-        final fuel = _text(data, ['fuelType'], 'Not provided');
-        final inspection = _text(data, ['inspectionStatus'], 'Pending');
         final license = _text(data, ['licenseNumber', 'dlNumber'], 'Not provided');
         final licenseValidity = _text(data, ['licenseValidity'], 'Not provided');
         final badge = _text(data, ['transportBadge', 'badgeStatus'], 'Not provided');
@@ -98,40 +152,38 @@ class ProfileScreen extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Duty Status', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.navy)),
-                        const SizedBox(height: 2),
-                        Text(
-                          isOnline ? 'You are online for bookings' : 'You are currently offline',
-                          style: TextStyle(fontSize: 12, color: isOnline ? Colors.green[700] : AppColors.muted, fontWeight: FontWeight.w600),
-                        ),
-                      ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Duty Status', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.navy)),
+                          const SizedBox(height: 2),
+                          Text(
+                            isOnline
+                                ? 'You are online for bookings'
+                                : canGoOnline
+                                    ? 'You are currently offline'
+                                    : 'Account verification required before going online',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isOnline ? Colors.green[700] : AppColors.muted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     Switch.adaptive(
                       value: isOnline,
                       activeColor: AppColors.navy,
-                      onChanged: (value) async {
-                        if (value) {
-                          final success = await PartnerPresenceService.setOnline(true);
-                          if (!context.mounted) return;
-                          if (!success) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Unable to go online. Please enable location and check your account status.'),
-                                backgroundColor: Colors.orange,
+                      onChanged: canGoOnline || isOnline
+                          ? (value) => _toggleOnline(context, value, data)
+                          : (value) => _showStatusMessage(
+                                context,
+                                verificationUpper == 'UNDER_REVIEW'
+                                    ? 'Your account is under review. Online access will be enabled after approval.'
+                                    : 'Your account must be active before you can go online.',
                               ),
-                            );
-                          }
-                        } else {
-                          await PartnerPresenceService.setOfflineBestEffort();
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('You are now offline.')),
-                          );
-                        }
-                      },
                     ),
                   ],
                 ),
@@ -145,31 +197,11 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 10),
               _buildMenuTile(Icons.account_balance_rounded, 'Bank / Payout Details', 'Manage your payout account', () => _showBankDetails(context, data, user.uid)),
               const SizedBox(height: 10),
-              _buildMenuTile(Icons.support_agent_rounded, 'Support', 'Contact the partner support team', () => Navigator.of(context).pushNamed('/support')),
-              const SizedBox(height: 10),
-              _buildMenuTile(Icons.logout_rounded, 'Logout', 'Sign out of this partner account', () async {
-                await FirebaseAuth.instance.signOut();
-                if (context.mounted) Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
+              _buildMenuTile(Icons.support_agent_rounded, 'Support', 'Contact the partner support team', () {
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupportScreen()));
               }),
-              const SizedBox(height: 20),
-              AppCard(
-                child: Row(
-                  children: [
-                    const Icon(Icons.verified_user_rounded, color: AppColors.navy),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Vehicle Inspection', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w900)),
-                          const SizedBox(height: 2),
-                          Text('Fuel: $fuel • Inspection: $inspection', style: const TextStyle(color: AppColors.muted, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              const SizedBox(height: 10),
+              _buildMenuTile(Icons.logout_rounded, 'Logout', 'Sign out of this partner account', () => _logout(context)),
             ],
           ),
         );
@@ -214,9 +246,7 @@ class ProfileScreen extends StatelessWidget {
         title: const Text('Assigned Vehicle'),
         content: Text(
           'Model: ${_text(data, ['vehicleModel', 'vehicleType'], 'Not provided')}\n'
-          'Registration: ${_text(data, ['vehicleNumber', 'registrationNumber'], 'Not provided')}\n'
-          'Fuel: ${_text(data, ['fuelType'], 'Not provided')}\n'
-          'Inspection: ${_text(data, ['inspectionStatus'], 'Pending')}',
+          'Registration: ${_text(data, ['vehicleNumber', 'registrationNumber'], 'Not provided')}',
         ),
       ),
     );
