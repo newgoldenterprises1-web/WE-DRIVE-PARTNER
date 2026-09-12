@@ -64,6 +64,20 @@ service cloud.firestore {
       );
       allow delete: if false;
     }
+    match /supportTickets/{ticketId} {
+      allow create: if isActivePartner()
+        && request.resource.data.partnerId == request.auth.uid
+        && request.resource.data.status == 'OPEN'
+        && request.resource.data.category is string
+        && request.resource.data.category.size() <= 100
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow read: if isPartner() && resource.data.partnerId == request.auth.uid;
+      allow update, delete: if false;
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }
