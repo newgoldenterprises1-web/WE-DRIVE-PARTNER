@@ -43,7 +43,11 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == partnerId && request.resource.data.uid == request.auth.uid && (!('isOnline' in request.resource.data) || request.resource.data.isOnline == false);
       allow read: if signedIn() && request.auth.uid == partnerId;
       allow update: if signedIn() && request.auth.uid == partnerId && resource.data.uid == request.auth.uid && request.resource.data.uid == resource.data.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid','name','email','phone','isOnline','location','latitude','longitude','lastSeenAt','updatedAt','createdAt','onlineStartedAt','onlineMinutesToday','onlineDateKey']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid','name','email','phone','isOnline','location','latitude','longitude','lastSeenAt',
+          'updatedAt','createdAt','onlineStartedAt','onlineMinutesToday','onlineDateKey',
+          'bankAccountNo','ifscCode','accountHolder','bankUpdatedTime'
+        ]);
       allow delete: if false;
     }
     match /bookings/{bookingId} {
