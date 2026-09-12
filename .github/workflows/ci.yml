@@ -11,10 +11,18 @@ on:
       - payment-integration-hardening
       - production-hardening
       - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: we-drive-partner-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   flutter:
-    name: Flutter analyze, test and debug build
+    name: Flutter analyze, test and Android APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,10 +43,10 @@ jobs:
       - name: Flutter test
         run: flutter test
 
-      - name: Build Android debug APK
+      - name: Build debug APK
         run: flutter build apk --debug
 
-      - name: Upload debug APK artifact
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: we-drive-partner-debug-apk
