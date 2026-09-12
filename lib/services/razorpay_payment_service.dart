@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
+import '../data/app_data.dart';
+
 class RazorpayPaymentService {
   RazorpayPaymentService._();
 
@@ -16,10 +18,6 @@ class RazorpayPaymentService {
   // Set to false only after the server-side Razorpay Test/Live order and
   // verification endpoints are configured.
   static const bool testMode = true;
-
-  // Session-only development activation. This is deliberately kept in memory
-  // so Test Mode can open the partner UI without weakening Firestore rules.
-  static bool testOnboardingActivated = false;
 
   static const String _functionBaseUrl =
       'https://asia-south1-we-drive-4315a.cloudfunctions.net';
@@ -44,7 +42,8 @@ class RazorpayPaymentService {
     if (testMode) {
       await Future<void>.delayed(const Duration(milliseconds: 700));
       if (normalizedPlan == 'ONBOARDING') {
-        testOnboardingActivated = true;
+        // Session-only dummy activation. Never persisted to Firestore.
+        AppData.testPartnerActivated = true;
       }
       return true;
     }
