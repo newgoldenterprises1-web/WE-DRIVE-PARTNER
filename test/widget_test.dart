@@ -11,5 +11,9 @@ void main() {
       find.text('Your Car. Your Comfort. Our Chauffeur.'),
       findsOneWidget,
     );
+
+    // Complete the splash delay so no timer remains pending when the test ends.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
   });
 }
