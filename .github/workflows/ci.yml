@@ -75,4 +75,4 @@ jobs:
         run: npm install --no-audit --no-fund
 
       - name: Check JavaScript syntax
-        run: node --check index.js && node --check payment.js
+        run: node --check index.js && node --check payment.js && node --check fcm.js && node --check notifications.js
