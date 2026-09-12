@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../data/app_data.dart';
 import '../../services/partner_plan_service.dart';
 import '../../services/razorpay_payment_service.dart';
 import '../../theme/app_theme.dart';
@@ -24,8 +25,7 @@ class _OnboardingPaymentScreenState extends State<OnboardingPaymentScreen> {
     if (!mounted) return;
 
     if (success) {
-      if (RazorpayPaymentService.testMode &&
-          RazorpayPaymentService.testOnboardingActivated) {
+      if (RazorpayPaymentService.testMode && AppData.testPartnerActivated) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('₹299 dummy payment completed. Test activation enabled for this app session.'),
