@@ -35,6 +35,61 @@ function normalizePhone(phoneNumber) {
   return `+91${local}`;
 }
 
+function msg91WidgetToken() {
+  const token = process.env.MSG91_WIDGET_AUTH_TOKEN || process.env.MSG91_AUTH_TOKEN;
+  if (!token) throw new Error('MSG91 widget token is not configured on the backend.');
+  return token.trim();
+}
+
+async function msg91WidgetRequest(path, body) {
+  const response = await fetch(`https://control.msg91.com/api/v5/widget${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ widgetId: process.env.MSG91_WIDGET_ID || '36696d6a754f383834373433', tokenAuth: msg91WidgetToken(), ...body }),
+  });
+  const raw = await response.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch (_) { data = { raw }; }
+  if (!response.ok) {
+    const error = new Error(data?.message || data?.error || `MSG91 request failed (${response.status}).`);
+    error.status = 502;
+    throw error;
+  }
+  return data;
+}
+
+function extractRequestId(data) {
+  const candidates = [
+    data?.reqId,
+    data?.reqid,
+    data?.requestId,
+    data?.request_id,
+    data?.message,
+    data?.data?.reqId,
+    data?.data?.requestId,
+    data?.data?.message,
+  ];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function extractAccessToken(data) {
+  const candidates = [
+    data?.['access-token'],
+    data?.accessToken,
+    data?.token,
+    data?.data?.['access-token'],
+    data?.data?.accessToken,
+    data?.data?.token,
+  ];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
 async function verifyMsg91AccessToken(accessToken) {
   if (!accessToken || typeof accessToken !== 'string') {
     const error = new Error('MSG91 verification token is missing.');
@@ -52,7 +107,7 @@ async function verifyMsg91AccessToken(accessToken) {
   const body = await response.json().catch(() => ({}));
   const statusText = String(body?.type || body?.status || '').toLowerCase();
   if (!response.ok || (statusText && !['success', 'ok'].includes(statusText))) {
-    const error = new Error('MSG91 OTP verification could not be completed.');
+    const error = new Error(body?.message || 'MSG91 OTP verification could not be completed.');
     error.status = 401;
     throw error;
   }
@@ -91,6 +146,44 @@ async function requireDriver(req) {
 }
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'we-drive-backend' }));
+
+app.post('/api/auth/driver/msg91/send', authLimiter, async (req, res, next) => {
+  try {
+    const phone = normalizePhone(req.body?.phoneNumber);
+    const data = await msg91WidgetRequest('/sendOtpMobile', { identifier: phone.replace('+', '') });
+    const reqId = extractRequestId(data);
+    if (!reqId) {
+      const error = new Error(data?.message || 'MSG91 did not return a request ID.');
+      error.status = 502;
+      throw error;
+    }
+    res.json({ reqId, phoneNumber: phone, msg91: data });
+  } catch (error) { next(error); }
+});
+
+app.post('/api/auth/driver/msg91/retry', authLimiter, async (req, res, next) => {
+  try {
+    const reqId = String(req.body?.reqId || '').trim();
+    const retryChannel = Number(req.body?.retryChannel || 12);
+    if (!reqId) { const e = new Error('MSG91 request ID is required.'); e.status = 400; throw e; }
+    const data = await msg91WidgetRequest('/retryOtp', { reqId, retryChannel });
+    res.json({ ...data, reqId: extractRequestId(data) || reqId });
+  } catch (error) { next(error); }
+});
+
+app.post('/api/auth/driver/msg91/verify', authLimiter, async (req, res, next) => {
+  try {
+    const phoneNumber = normalizePhone(req.body?.phoneNumber);
+    const reqId = String(req.body?.reqId || '').trim();
+    const otp = String(req.body?.otp || '').trim();
+    if (!reqId || !/^\d{4,6}$/.test(otp)) { const e = new Error('Valid request ID and OTP are required.'); e.status = 400; throw e; }
+    const data = await msg91WidgetRequest('/verifyOtp', { reqId, otp });
+    const accessToken = extractAccessToken(data);
+    if (!accessToken) { const e = new Error('MSG91 verification succeeded but no access token was returned.'); e.status = 502; throw e; }
+    const session = await createFirebaseSession({ accessToken, phoneNumber, role: 'driver' });
+    res.json(session);
+  } catch (error) { next(error); }
+});
 
 app.post('/api/auth/driver/msg91', authLimiter, async (req, res, next) => {
   try {
@@ -156,7 +249,6 @@ app.post('/api/bookings/:bookingId/decline', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-// Replaces the old Firestore onDocumentWritten trigger. Keep one backend instance running.
 function startBookingEarningsListener() {
   db.collection('bookings').onSnapshot((snapshot) => {
     for (const change of snapshot.docChanges()) {
