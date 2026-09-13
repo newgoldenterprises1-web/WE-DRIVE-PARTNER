@@ -1,10 +1,31 @@
-WE DRIVE PARTNER APP — MASTER FRONTEND FINAL
+WE DRIVE PARTNER — PRODUCTION COMPLETION MASTER NOTE
 
-Approved UI baseline: navy + white + gold premium partner UI.
-Screens: Splash, Login, OTP, Signup, Home, Bookings, Booking Detail, Earnings, Account, Verification, Journey History, Notifications, Support.
+Frontend baseline: premium UI/screens preserved; no redesign.
 
-IMPORTANT:
-This bundle contains the Flutter frontend source (lib/) and pubspec.yaml. Keep the existing Android/iOS platform folders of the user's Flutter project intact.
-If a platform folder is missing, run `flutter create .` once from the project root, then copy this bundle's lib/ and pubspec.yaml into the project.
+Implemented in repository:
+- Splash/navigation/auth UI
+- MSG91 WhatsApp-first OTP with SMS retry client integration
+- Firebase custom-token authentication bridge
+- Secure MSG91 Authkey backend secret integration
+- Firestore-backed booking feed and booking status workflow
+- Atomic backend booking acceptance / decline
+- Partner online/offline backend presence
+- Live partner GPS service with Android location permissions
+- Firestore partner location persistence
+- Firebase Storage vehicle inspection uploads
+- Idempotent completed-trip earnings ledger
+- Firestore and Storage security rules
+- Firebase deployment configuration for functions/rules
+- Release signing configuration with private keystore support and local debug fallback
+- Signing secrets/keystores excluded from Git
 
-All visible primary navigation/actions in the supplied frontend are wired to local UI flows. External services such as Firebase, Google Maps, phone/SMS and backend APIs require their production credentials/integration before release.
+Production credentials/deployment that must be performed outside source control:
+1. Set a NEW MSG91 Authkey in Firebase Secret Manager: MSG91_AUTHKEY.
+2. Build the app with the private MSG91 widget auth token supplied through --dart-define=MSG91_AUTH_TOKEN=...
+3. Deploy Firebase Functions + Firestore + Storage rules to project we-drive-4315.
+4. Test MSG91 OTP on a real Android device with WhatsApp and SMS fallback.
+5. Enable/configure Google Maps Platform if an embedded map is required; navigation can already open Google Maps externally.
+6. Generate and protect the Play Store release keystore; create android/key.properties locally.
+7. Run release APK/AAB tests on a physical Android device.
+
+Important: source code can be made production-ready, but external credentials, Firebase deployment, third-party channel approval, and physical-device QA cannot honestly be marked completed until actually executed and verified.
