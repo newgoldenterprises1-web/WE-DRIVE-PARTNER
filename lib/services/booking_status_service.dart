@@ -35,6 +35,8 @@ class BookingStatusService {
         final data = snapshot.data() ?? <String, dynamic>{};
         final current = (data['status'] ?? 'SEARCHING').toString().toUpperCase();
         final partnerId = (data['partnerId'] ?? '').toString().trim();
+        final isPremiumBooking = data['isPremiumBooking'] == true;
+        final isPremiumPartner = partnerData['isPremium'] == true;
 
         if (!_canTransition(current, target)) throw StateError('invalid_transition');
 
@@ -43,6 +45,7 @@ class BookingStatusService {
           if (accountStatus != null && accountStatus != 'ACTIVE') throw StateError('inactive');
           if (partnerData['isOnline'] != true) throw StateError('offline');
           if (partnerId.isNotEmpty && partnerId != user.uid) throw StateError('assigned');
+          if (isPremiumBooking && !isPremiumPartner) throw StateError('premium_required');
 
           transaction.set(ref, {
             'status': 'ACCEPTED',

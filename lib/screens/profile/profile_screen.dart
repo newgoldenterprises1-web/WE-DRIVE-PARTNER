@@ -1,548 +1,311 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../services/location_service.dart';
+import '../../services/partner_presence_service.dart';
 import '../../theme/app_theme.dart';
+import '../auth/login_screen.dart';
+import '../support/support_screen.dart';
 
-class ProfileScreen extends StatefulWidget {
+class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
-  @override
-  State<ProfileScreen> createState() => _ProfileScreenState();
-}
-
-class _ProfileScreenState extends State<ProfileScreen> {
-  bool isOnline = true;
-  bool _isLoadingAction = false;
-
-  void _showVehicleDetails(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) => Padding(
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 24,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Assigned Vehicle Details',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy),
-              ),
-              const SizedBox(height: 16),
-              _modalRow('Vehicle Model', 'Maruti Suzuki Dzire (Manual)'),
-              _modalRow('Registration No.', 'TS 09 EA 7860'),
-              _modalRow('Fuel Type', 'Petrol + CNG'),
-              _modalRow('Inspection Status', 'Passed • Valid till Dec 2026'),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, foregroundColor: Colors.white),
-                  onPressed: _isLoadingAction
-                      ? null
-                      : () async {
-                          setModalState(() => _isLoadingAction = true);
-                          await Future.delayed(const Duration(seconds: 1)); // Simulating API sync
-                          setModalState(() => _isLoadingAction = false);
-                          if (!context.mounted) return;
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Vehicle change request successfully submitted to support!'),
-                              backgroundColor: Colors.green,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                  child: _isLoadingAction
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Request Vehicle Update'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  String _text(Map<String, dynamic> data, List<String> keys, String fallback) {
+    for (final key in keys) {
+      final value = data[key]?.toString().trim();
+      if (value != null && value.isNotEmpty) return value;
+    }
+    return fallback;
   }
 
-  void _showDLDetails(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Driving License & Badge',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy),
-            ),
-            const SizedBox(height: 16),
-            _modalRow('License Number', 'TS08 20210004921'),
-            _modalRow('Holder Name', 'Mohd Shahed Hussain'),
-            _modalRow('Validity', 'Valid up to 14/08/2031'),
-            _modalRow('Transport Badge', 'Heavy & Light Motor Vehicles (Verified)'),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('RTA License sync complete. All documents are active.'),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                child: const Text('Re-verify with RTA Telangana'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  Future<void> _showStatusMessage(BuildContext context, String message) async {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  void _showBankDetails(BuildContext context) {
-    final TextEditingController accountController = TextEditingController(text: '4092');
-    final TextEditingController ifscController = TextEditingController(text: 'HDFC0001829');
+  Future<void> _toggleOnline(BuildContext context, bool value, Map<String, dynamic> data) async {
+    final status = _text(data, ['accountStatus', 'verificationStatus'], 'PENDING').toUpperCase();
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          left: 24,
-          right: 24,
-          top: 24,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Bank & Payout Details',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy),
-            ),
-            const SizedBox(height: 16),
-            _modalRow('Bank Name', 'HDFC Bank'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: accountController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Last 4 Digits of Account',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ifscController,
-              decoration: const InputDecoration(
-                labelText: 'IFSC Code',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, foregroundColor: Colors.white),
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Bank details updated successfully! Payouts will route here.'),
-                      backgroundColor: Colors.green,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                child: const Text('Save & Update Bank Account'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (value && status != 'ACTIVE') {
+      await _showStatusMessage(
+        context,
+        status == 'UNDER_REVIEW'
+            ? 'Your partner account is under review. You can go online after verification is approved.'
+            : 'Your partner account is not active yet. Please complete verification first.',
+      );
+      return;
+    }
+
+    if (value) {
+      final locationReady = await LocationService.ensurePermission();
+      if (!locationReady) {
+        await _showStatusMessage(context, 'Please enable Location/GPS permission to go online.');
+        return;
+      }
+
+      final success = await PartnerPresenceService.setOnline(true);
+      if (!success) {
+        await _showStatusMessage(context, 'Could not update availability. Please try again.');
+      }
+      return;
+    }
+
+    await PartnerPresenceService.setOfflineBestEffort();
+    await _showStatusMessage(context, 'You are now offline.');
   }
 
-  void _showSupportSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'We Drive Partner Support',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy),
-            ),
-            const SizedBox(height: 12),
-            const Text('Need immediate assistance on trip or payment? Contact our 24/7 Hyderabad helpline.', style: TextStyle(color: AppColors.muted, fontSize: 13)),
-            const SizedBox(height: 16),
-            _modalRow('Helpline Number', '+91 40 6892 7800'),
-            _modalRow('Partner Email', 'support@wedrive.co.in'),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(foregroundColor: AppColors.navy),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Email support triggered: support@wedrive.co.in'), behavior: SnackBarBehavior.floating),
-                      );
-                    },
-                    child: const Text('Email Us'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, foregroundColor: Colors.white),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Dialing We Drive Support Hotline...'), behavior: SnackBarBehavior.floating),
-                      );
-                    },
-                    child: const Text('Call Now'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showTermsSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Terms & Safety Guidelines',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.navy),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '1. Always complete pre-trip and post-trip vehicle inspections.\n'
-              '2. Maintain professional conduct and adhere to traffic regulations in Hyderabad.\n'
-              '3. 85% settlement share is credited weekly directly to your registered bank account.\n'
-              '4. Zero tolerance for rash driving or unauthorized vehicle use.',
-              style: TextStyle(color: AppColors.muted, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, foregroundColor: Colors.white),
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Guidelines accepted & verified.'), behavior: SnackBarBehavior.floating),
-                  );
-                },
-                child: const Text('I Agree & Understand'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Log Out'),
-        content: const Text('Are you sure you want to log out from We Drive Partner App?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.muted)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Logged out successfully from session.'), behavior: SnackBarBehavior.floating),
-              );
-            },
-            child: const Text('Log Out'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _modalRow(String title, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(title, style: const TextStyle(color: AppColors.muted, fontSize: 13)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.navy)),
-        ],
-      ),
+  Future<void> _logout(BuildContext context) async {
+    try {
+      await PartnerPresenceService.setOfflineBestEffort();
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {
+      await FirebaseAuth.instance.signOut();
+    }
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Driver Profile & Status'),
-        elevation: 0,
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          // Driver Status Banner Card
-          AppCard(
-            color: AppColors.navy,
-            child: Row(
-              children: [
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: AppColors.gold.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  child: const Icon(
-                    Icons.person_rounded,
-                    color: AppColors.gold,
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Mohd Shahed',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      const Text(
-                        'ID: WD-PARTNER-786',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.green.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: const Text(
-                          'KYC Verified • Aadhar Linked',
-                          style: TextStyle(
-                            color: Colors.greenAccent,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const Scaffold(body: Center(child: Text('Please sign in again.')));
+    }
 
-          // Duty Toggle Card
-          AppCard(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('partners').doc(user.uid).snapshots(),
+      builder: (context, snapshot) {
+        final data = snapshot.data?.data() ?? <String, dynamic>{};
+        final name = _text(data, ['name', 'fullName'], user.displayName ?? 'Partner');
+        final partnerCode = _text(
+          data,
+          ['partnerCode', 'partnerId'],
+          'WD-${user.uid.substring(0, user.uid.length > 8 ? 8 : user.uid.length).toUpperCase()}',
+        );
+        final verification = _text(data, ['verificationStatus', 'accountStatus'], 'PENDING');
+        final verificationUpper = verification.toUpperCase();
+        final isVerified = verificationUpper == 'VERIFIED' || verificationUpper == 'ACTIVE';
+        final isOnline = data['isOnline'] == true;
+        final canGoOnline = verificationUpper == 'ACTIVE';
+        final vehicle = _text(data, ['vehicleModel', 'vehicleType'], 'Vehicle details unavailable');
+        final registration = _text(data, ['vehicleNumber', 'registrationNumber'], 'Registration unavailable');
+        final license = _text(data, ['licenseNumber', 'dlNumber'], 'Not provided');
+        final licenseValidity = _text(data, ['licenseValidity'], 'Not provided');
+        final badge = _text(data, ['transportBadge', 'badgeStatus'], 'Not provided');
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFF7F9FC),
+          appBar: AppBar(title: const Text('My Profile'), elevation: 0),
+          body: ListView(
+            padding: const EdgeInsets.all(18),
+            children: [
+              AppCard(
+                color: AppColors.navy,
+                child: Row(
                   children: [
-                    const Text(
-                      'Duty Status',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.navy,
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: AppColors.gold.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(30),
                       ),
+                      child: const Icon(Icons.person_rounded, color: AppColors.gold, size: 32),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      isOnline ? 'You are online for bookings' : 'You are currently offline',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isOnline ? Colors.green[700] : AppColors.muted,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+                          const SizedBox(height: 2),
+                          Text('ID: $partnerCode', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                          const SizedBox(height: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (isVerified ? Colors.green : AppColors.gold).withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              isVerified ? 'KYC Verified' : 'Verification: $verification',
+                              style: TextStyle(
+                                color: isVerified ? Colors.greenAccent : Colors.amberAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                Switch.adaptive(
-                  value: isOnline,
-                  activeColor: AppColors.navy,
-                  onChanged: (val) {
-                    setState(() {
-                      isOnline = val;
-                    });
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(isOnline ? 'You are now online & receiving requests.' : 'You are now offline.'),
-                        behavior: SnackBarBehavior.floating,
+              ),
+              const SizedBox(height: 16),
+              AppCard(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Duty Status', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.navy)),
+                          const SizedBox(height: 2),
+                          Text(
+                            isOnline
+                                ? 'You are online for bookings'
+                                : canGoOnline
+                                    ? 'You are currently offline'
+                                    : 'Account verification required before going online',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isOnline ? Colors.green[700] : AppColors.muted,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
-                    );
-                  },
+                    ),
+                    Switch.adaptive(
+                      value: isOnline,
+                      activeColor: AppColors.navy,
+                      onChanged: canGoOnline || isOnline
+                          ? (value) => _toggleOnline(context, value, data)
+                          : (value) => _showStatusMessage(
+                                context,
+                                verificationUpper == 'UNDER_REVIEW'
+                                    ? 'Your account is under review. Online access will be enabled after approval.'
+                                    : 'Your account must be active before you can go online.',
+                              ),
+                    ),
+                  ],
                 ),
+              ),
+              const SizedBox(height: 20),
+              const Text('Account Settings & Documents', style: TextStyle(color: AppColors.navy, fontSize: 16, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 10),
+              _buildMenuTile(Icons.directions_car_rounded, 'Assigned Vehicle', '$vehicle • $registration', () => _showVehicleDetails(context, data)),
+              const SizedBox(height: 10),
+              _buildMenuTile(Icons.badge_outlined, 'Driving Licence', '$license • Validity: $licenseValidity', () => _showLicenseDetails(context, data, badge)),
+              const SizedBox(height: 10),
+              _buildMenuTile(Icons.account_balance_rounded, 'Bank / Payout Details', 'Manage your payout account', () => _showBankDetails(context, data, user.uid)),
+              const SizedBox(height: 10),
+              _buildMenuTile(Icons.support_agent_rounded, 'Support', 'Contact the partner support team', () {
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SupportScreen()));
+              }),
+              const SizedBox(height: 10),
+              _buildMenuTile(Icons.logout_rounded, 'Logout', 'Sign out of this partner account', () => _logout(context)),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMenuTile(IconData icon, String title, String subtitle, VoidCallback onTap) {
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppColors.navy.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: AppColors.navy),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(color: AppColors.navy, fontWeight: FontWeight.w900, fontSize: 14)),
+                const SizedBox(height: 2),
+                Text(subtitle, style: const TextStyle(color: AppColors.muted, fontSize: 12)),
               ],
             ),
           ),
-          const SizedBox(height: 20),
-
-          const Text(
-            'Account Settings & Documents',
-            style: TextStyle(
-              color: AppColors.navy,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          _buildMenuTile(
-            Icons.directions_car_rounded, 
-            'Assigned Vehicle', 
-            'Sedan / Hatchback Manual',
-            () => _showVehicleDetails(context),
-          ),
-          _buildMenuTile(
-            Icons.verified_user_rounded, 
-            'Driving License & Badge', 
-            'Verified & Active',
-            () => _showDLDetails(context),
-          ),
-          _buildMenuTile(
-            Icons.account_balance_rounded, 
-            'Bank & Payout Details', 
-            'HDFC Bank •••• 4092',
-            () => _showBankDetails(context),
-          ),
-          _buildMenuTile(
-            Icons.support_agent_rounded, 
-            'We Drive Partner Support', 
-            '24/7 Helpline Available',
-            () => _showSupportSheet(context),
-          ),
-          _buildMenuTile(
-            Icons.privacy_tip_rounded, 
-            'Terms & Safety Guidelines', 
-            'View Policies',
-            () => _showTermsSheet(context),
-          ),
-          
-          const SizedBox(height: 20),
-          AppOutlineButton(
-            label: 'LOG OUT',
-            icon: Icons.logout_rounded,
-            onPressed: () => _showLogoutDialog(context),
-          ),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.muted),
         ],
       ),
     );
   }
 
-  Widget _buildMenuTile(IconData icon, String title, String subtitle, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: AppCard(
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.navy.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: AppColors.navy, size: 22),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: AppColors.navy,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.muted),
-            ],
-          ),
+  void _showVehicleDetails(BuildContext context, Map<String, dynamic> data) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Assigned Vehicle'),
+        content: Text(
+          'Model: ${_text(data, ['vehicleModel', 'vehicleType'], 'Not provided')}\n'
+          'Registration: ${_text(data, ['vehicleNumber', 'registrationNumber'], 'Not provided')}',
         ),
       ),
     );
+  }
+
+  void _showLicenseDetails(BuildContext context, Map<String, dynamic> data, String badge) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Driving Licence'),
+        content: Text(
+          'DL Number: ${_text(data, ['licenseNumber', 'dlNumber'], 'Not provided')}\n'
+          'Validity: ${_text(data, ['licenseValidity'], 'Not provided')}\n'
+          'Transport Badge: $badge',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showBankDetails(BuildContext context, Map<String, dynamic> data, String uid) async {
+    final account = TextEditingController(text: data['bankAccountNo']?.toString() ?? '');
+    final ifsc = TextEditingController(text: data['ifscCode']?.toString() ?? '');
+    final holder = TextEditingController(text: data['accountHolder']?.toString() ?? '');
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Bank / Payout Details'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: holder, decoration: const InputDecoration(labelText: 'Account holder')),
+                TextField(controller: account, decoration: const InputDecoration(labelText: 'Bank account number'), keyboardType: TextInputType.number),
+                TextField(controller: ifsc, decoration: const InputDecoration(labelText: 'IFSC')),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
+            ElevatedButton(
+              onPressed: () async {
+                await FirebaseFirestore.instance.collection('partners').doc(uid).set({
+                  'bankAccountNo': account.text.trim(),
+                  'ifscCode': ifsc.text.trim().toUpperCase(),
+                  'accountHolder': holder.text.trim(),
+                  'bankUpdatedTime': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: const Text('SAVE'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      account.dispose();
+      ifsc.dispose();
+      holder.dispose();
+    }
   }
 }

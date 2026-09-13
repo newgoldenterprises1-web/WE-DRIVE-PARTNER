@@ -30,7 +30,7 @@ class PhoneAuthService {
           }
         },
         verificationFailed: onError,
-        codeSent: onCodeSent,
+        codeSent: (verificationId, _) => onCodeSent(verificationId),
         codeAutoRetrievalTimeout: onCodeAutoRetrievalTimeout ?? (_) {},
       );
     } on FirebaseAuthException catch (error) {
@@ -64,7 +64,7 @@ class PhoneAuthService {
           }
         },
         verificationFailed: onError,
-        codeSent: onCodeSent,
+        codeSent: (verificationId, _) => onCodeSent(verificationId),
         codeAutoRetrievalTimeout: onCodeAutoRetrievalTimeout ?? (_) {},
       );
     } on FirebaseAuthException catch (error) {
@@ -72,15 +72,27 @@ class PhoneAuthService {
     }
   }
 
-  static Future<UserCredential> signInWithSmsCode({required String verificationId, required String smsCode}) {
-    final credential = PhoneAuthProvider.credential(verificationId: verificationId, smsCode: smsCode.trim());
+  static Future<UserCredential> signInWithSmsCode({
+    required String verificationId,
+    required String smsCode,
+  }) {
+    final credential = PhoneAuthProvider.credential(
+      verificationId: verificationId,
+      smsCode: smsCode.trim(),
+    );
     return _auth.signInWithCredential(credential);
   }
 
-  static Future<UserCredential> linkPhoneWithSmsCode({required String verificationId, required String smsCode}) async {
+  static Future<UserCredential> linkPhoneWithSmsCode({
+    required String verificationId,
+    required String smsCode,
+  }) async {
     final user = _auth.currentUser;
     if (user == null) throw FirebaseAuthException(code: 'invalid-state');
-    final credential = PhoneAuthProvider.credential(verificationId: verificationId, smsCode: smsCode.trim());
+    final credential = PhoneAuthProvider.credential(
+      verificationId: verificationId,
+      smsCode: smsCode.trim(),
+    );
     return user.linkWithCredential(credential);
   }
 }

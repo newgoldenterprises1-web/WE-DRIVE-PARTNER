@@ -20,7 +20,7 @@ service cloud.firestore {
       return data.status in ['REQUESTED','SEARCHING','requested','searching'];
     }
     function isPremiumBooking(data) {
-      return data.isPremiumBooking == true || data.serviceTier == 'PREMIUM';
+      return data.isPremiumBooking == true;
     }
     function canSeeBooking(data) {
       return isActivePartner() && (
@@ -43,7 +43,11 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == partnerId && request.resource.data.uid == request.auth.uid && (!('isOnline' in request.resource.data) || request.resource.data.isOnline == false);
       allow read: if signedIn() && request.auth.uid == partnerId;
       allow update: if signedIn() && request.auth.uid == partnerId && resource.data.uid == request.auth.uid && request.resource.data.uid == resource.data.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid','name','email','phone','isOnline','location','latitude','longitude','lastSeenAt','updatedAt','createdAt','onlineStartedAt','onlineMinutesToday','onlineDateKey']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'uid','name','email','phone','isOnline','location','latitude','longitude','lastSeenAt',
+          'updatedAt','createdAt','onlineStartedAt','onlineMinutesToday','onlineDateKey',
+          'bankAccountNo','ifscCode','accountHolder','bankUpdatedTime'
+        ]);
       allow delete: if false;
     }
     match /bookings/{bookingId} {
@@ -59,6 +63,20 @@ service cloud.firestore {
         (resource.data.partnerId == request.auth.uid && canSeeBooking(resource.data) && request.resource.data.partnerId == resource.data.partnerId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['preTripFrontUrl','preTripBackUrl','preTripRightUrl','preTripLeftUrl','driverSelfieUrl','postTripFrontUrl','postTripBackUrl','postTripRightUrl','postTripLeftUrl','inspectionUpdatedAt']))
       );
       allow delete: if false;
+    }
+    match /supportTickets/{ticketId} {
+      allow create: if isPartner()
+        && request.resource.data.partnerId == request.auth.uid
+        && request.resource.data.status == 'OPEN'
+        && request.resource.data.category is string
+        && request.resource.data.category.size() <= 100
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow read: if isPartner() && resource.data.partnerId == request.auth.uid;
+      allow update, delete: if false;
     }
     match /{document=**} { allow read, write: if false; }
   }

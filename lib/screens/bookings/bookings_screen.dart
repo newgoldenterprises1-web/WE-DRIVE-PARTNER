@@ -9,11 +9,7 @@ class BookingsScreen extends StatelessWidget {
   final List<Booking>? bookings;
   final bool partnerOnline;
 
-  const BookingsScreen({
-    super.key,
-    this.bookings,
-    this.partnerOnline = false,
-  });
+  const BookingsScreen({super.key, this.bookings, this.partnerOnline = false});
 
   List<QueryDocumentSnapshot<Map<String, dynamic>>> _mergeDocs(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> pendingDocs,
@@ -26,7 +22,6 @@ class BookingsScreen extends StatelessWidget {
     for (final doc in assignedDocs) {
       byId[doc.id] = doc;
     }
-
     final merged = byId.values.toList();
     merged.sort((a, b) {
       final aCreated = a.data()['createdAt'];
@@ -41,6 +36,19 @@ class BookingsScreen extends StatelessWidget {
     return merged;
   }
 
+  String _formatDate(DateTime value) {
+    return '${value.day.toString().padLeft(2, '0')}/'
+        '${value.month.toString().padLeft(2, '0')}/'
+        '${value.year}';
+  }
+
+  String _formatTime(DateTime value) {
+    final hour = value.hour;
+    final displayHour = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    final suffix = hour >= 12 ? 'PM' : 'AM';
+    return '$displayHour:${value.minute.toString().padLeft(2, '0')} $suffix';
+  }
+
   List<Booking> _toBookings(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
   ) {
@@ -52,18 +60,19 @@ class BookingsScreen extends StatelessWidget {
         acceptedAt = rawAcceptedAt.toDate();
       }
 
+      final rawCreatedAt = data['createdAt'];
+      final createdAt = rawCreatedAt is Timestamp ? rawCreatedAt.toDate().toLocal() : null;
+
       return Booking(
         id: doc.id,
         vehicle: (data['vehicleType'] ?? 'Sedan').toString(),
         customer: (data['customerName'] ?? 'Passenger').toString(),
         status: (data['status'] ?? 'SEARCHING').toString(),
-        date: 'Today',
-        time: 'Now',
+        date: createdAt == null ? 'Upcoming' : _formatDate(createdAt),
+        time: createdAt == null ? 'Scheduled' : _formatTime(createdAt),
         pickup: (data['pickupLocation'] ?? 'Hyderabad').toString(),
         destination: (data['dropLocation'] ?? 'Hyderabad').toString(),
-        earnings: (data['fare'] is num)
-            ? ((data['fare'] as num) * 0.85).toInt()
-            : 799,
+        earnings: (data['fare'] is num) ? ((data['fare'] as num) * 0.85).toInt() : 0,
         partnerId: (data['partnerId'] ?? '').toString().trim().isEmpty
             ? null
             : (data['partnerId'] ?? '').toString().trim(),
@@ -103,15 +112,12 @@ class BookingsScreen extends StatelessWidget {
       itemBuilder: (context, index) {
         final booking = liveBookings[index];
         final bool isRequested = booking.status.toUpperCase() == 'REQUESTED';
-
         return AppCard(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => BookingDetailScreen(booking: booking),
-              ),
-            );
-          },
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => BookingDetailScreen(booking: booking),
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -155,10 +161,7 @@ class BookingsScreen extends StatelessWidget {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: isRequested
                           ? const Color(0xFFFFF2C9)
@@ -229,11 +232,7 @@ class BookingsScreen extends StatelessWidget {
               const SizedBox(height: 14),
               Row(
                 children: [
-                  const Icon(
-                    Icons.payments_outlined,
-                    size: 16,
-                    color: AppColors.gold,
-                  ),
+                  const Icon(Icons.payments_outlined, size: 16, color: AppColors.gold),
                   const SizedBox(width: 6),
                   Text(
                     '₹${booking.earnings} (85% Share)',
@@ -267,9 +266,77 @@ class BookingsScreen extends StatelessWidget {
     );
   }
 
+  Widget _liveBookingStreams(BuildContext context, String partnerId, bool isPremium) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('bookings')
+          .where('status', whereIn: const ['REQUESTED', 'SEARCHING'])
+          .where('isPremiumBooking', isEqualTo: isPremium)
+          .snapshots(),
+      builder: (context, pendingSnapshot) {
+        if (pendingSnapshot.hasError) {
+          return const Center(
+            child: Text(
+              'Unable to load live bookings.',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+        }
+
+        final pendingDocs = partnerOnline
+            ? (pendingSnapshot.data?.docs ?? [])
+                .where(
+                  (doc) =>
+                      (doc.data()['partnerId'] ?? '').toString().trim().isEmpty,
+                )
+                .toList()
+            : <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance
+              .collection('bookings')
+              .where('partnerId', isEqualTo: partnerId)
+              .snapshots(),
+          builder: (context, assignedSnapshot) {
+            if (assignedSnapshot.hasError) {
+              return const Center(
+                child: Text(
+                  'Unable to load assigned bookings.',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              );
+            }
+            final assignedDocs = assignedSnapshot.data?.docs ?? [];
+            return _bookingList(
+              context,
+              _toBookings(_mergeDocs(pendingDocs, assignedDocs)),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentPartnerId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentPartnerId == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF7F9FC),
+        appBar: AppBar(
+          title: const Text('Live Bookings'),
+          elevation: 0,
+          automaticallyImplyLeading: false,
+        ),
+        body: _bookingList(context, const <Booking>[]),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F9FC),
@@ -278,19 +345,16 @@ class BookingsScreen extends StatelessWidget {
         elevation: 0,
         automaticallyImplyLeading: false,
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
-            .collection('bookings')
-            .where(
-              'status',
-              whereIn: const ['REQUESTED', 'SEARCHING'],
-            )
+            .collection('partners')
+            .doc(currentPartnerId)
             .snapshots(),
-        builder: (context, pendingSnapshot) {
-          if (pendingSnapshot.hasError) {
+        builder: (context, partnerSnapshot) {
+          if (partnerSnapshot.hasError) {
             return const Center(
               child: Text(
-                'Unable to load live bookings.',
+                'Unable to load partner profile.',
                 style: TextStyle(
                   color: AppColors.muted,
                   fontWeight: FontWeight.w600,
@@ -299,40 +363,9 @@ class BookingsScreen extends StatelessWidget {
             );
           }
 
-          final pendingDocs = partnerOnline
-              ? (pendingSnapshot.data?.docs ?? [])
-                  .where((doc) =>
-                      (doc.data()['partnerId'] ?? '').toString().trim().isEmpty)
-                  .toList()
-              : <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-
-          if (currentPartnerId == null) {
-            return _bookingList(context, _toBookings(pendingDocs));
-          }
-
-          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: FirebaseFirestore.instance
-                .collection('bookings')
-                .where('partnerId', isEqualTo: currentPartnerId)
-                .snapshots(),
-            builder: (context, assignedSnapshot) {
-              if (assignedSnapshot.hasError) {
-                return const Center(
-                  child: Text(
-                    'Unable to load assigned bookings.',
-                    style: TextStyle(
-                      color: AppColors.muted,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                );
-              }
-
-              final assignedDocs = assignedSnapshot.data?.docs ?? [];
-              final merged = _mergeDocs(pendingDocs, assignedDocs);
-              return _bookingList(context, _toBookings(merged));
-            },
-          );
+          final partnerData = partnerSnapshot.data?.data() ?? const <String, dynamic>{};
+          final isPremium = partnerData['isPremium'] == true;
+          return _liveBookingStreams(context, currentPartnerId, isPremium);
         },
       ),
     );

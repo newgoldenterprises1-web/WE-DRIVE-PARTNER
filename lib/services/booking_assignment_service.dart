@@ -1,12 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'booking_expiry_service.dart';
+
 class BookingAssignmentService {
   const BookingAssignmentService._();
 
   static bool _isPremiumBooking(Map<String, dynamic> data) {
-    return data['isPremiumBooking'] == true ||
-        (data['serviceTier'] ?? '').toString().toUpperCase() == 'PREMIUM';
+    return data['isPremiumBooking'] == true;
   }
 
   static Future<bool> acceptBooking(String bookingId) async {
@@ -34,6 +35,7 @@ class BookingAssignmentService {
 
         if (partnerId.isNotEmpty && partnerId != user.uid) throw StateError('assigned');
         if (status != 'REQUESTED' && status != 'SEARCHING') throw StateError('unavailable');
+        if (BookingExpiryService.isExpired(data)) throw StateError('expired');
 
         if (_isPremiumBooking(data) && partnerData['isPremium'] != true) {
           throw StateError('premium_required');
@@ -49,6 +51,8 @@ class BookingAssignmentService {
       });
       return true;
     } catch (_) {
+      // A stale booking is allowed to be cleaned up without ever being accepted.
+      await BookingExpiryService.expireIfStale(bookingId);
       return false;
     }
   }
