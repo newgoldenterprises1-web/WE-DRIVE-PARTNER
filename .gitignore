@@ -8,3 +8,6 @@ build/
 android/key.properties
 *.jks
 *.keystore
+.env
+.env.*
+!.env.example
