@@ -1,18 +1,21 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'driver_account_service.dart';
 
 /// Authentication service used by the existing partner login UI.
 ///
 /// The class name is kept for compatibility with the current screen, but the
-/// OTP provider is now Firebase Phone Authentication. No WE DRIVE backend is
-/// required to send or verify the SMS OTP.
+/// OTP provider is now Firebase Phone Authentication. After OTP verification,
+/// the authenticated user is bootstrapped as a WE DRIVE driver so backend
+/// claims and Firestore/Storage access are ready immediately.
 class Msg91OtpService {
   Msg91OtpService._();
 
   static final Msg91OtpService instance = Msg91OtpService._();
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final DriverAccountService _driverAccount = DriverAccountService.instance;
 
   String? _verificationId;
   int? _resendToken;
@@ -140,6 +143,10 @@ class Msg91OtpService {
         throw StateError('Firebase sign-in did not create a user session.');
       }
 
+      // Phone OTP has succeeded. Now create/restore the driver's server-side
+      // profile and custom claim before allowing the app into the partner area.
+      await _driverAccount.ensureDriverAccount();
+
       return <String, dynamic>{
         'success': true,
         'uid': user.uid,
@@ -157,6 +164,9 @@ class Msg91OtpService {
         default:
           throw StateError(_firebaseError(e));
       }
+    } catch (e) {
+      if (e is StateError) rethrow;
+      throw StateError('Partner account setup failed: $e');
     }
   }
 
