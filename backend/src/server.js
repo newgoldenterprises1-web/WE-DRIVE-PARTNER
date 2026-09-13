@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -21,8 +22,25 @@ function loadFirebaseCredentials() {
   return admin.credential.cert(JSON.parse(raw));
 }
 
-if (!admin.apps.length) admin.initializeApp({ credential: loadFirebaseCredentials() });
-const db = admin.firestore();
+if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON && !admin.apps.length) {
+  admin.initializeApp({ credential: loadFirebaseCredentials() });
+}
+
+const db = new Proxy({}, {
+  get(_target, property) {
+    if (!admin.apps.length) {
+      admin.initializeApp({ credential: loadFirebaseCredentials() });
+    }
+    return admin.firestore()[property];
+  },
+});
+
+function ensureFirebase() {
+  if (!admin.apps.length) {
+    admin.initializeApp({ credential: loadFirebaseCredentials() });
+  }
+  return admin.firestore();
+}
 
 function normalizePhone(phoneNumber) {
   const digits = String(phoneNumber || '').replace(/\D/g, '');
@@ -115,6 +133,7 @@ async function verifyMsg91AccessToken(accessToken) {
 }
 
 async function createFirebaseSession({ accessToken, phoneNumber, role }) {
+  ensureFirebase();
   const phone = normalizePhone(phoneNumber);
   await verifyMsg91AccessToken(accessToken);
   let user;
@@ -130,6 +149,7 @@ async function createFirebaseSession({ accessToken, phoneNumber, role }) {
 }
 
 async function requireDriver(req) {
+  ensureFirebase();
   const header = String(req.headers.authorization || '');
   if (!header.startsWith('Bearer ')) {
     const error = new Error('Firebase authentication is required.');
@@ -250,6 +270,10 @@ app.post('/api/bookings/:bookingId/decline', async (req, res, next) => {
 });
 
 function startBookingEarningsListener() {
+  if (!admin.apps.length) {
+    console.log('Firebase not configured; booking earnings listener disabled.');
+    return;
+  }
   db.collection('bookings').onSnapshot((snapshot) => {
     for (const change of snapshot.docChanges()) {
       if (!['added', 'modified'].includes(change.type)) continue;
