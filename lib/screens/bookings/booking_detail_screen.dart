@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -36,6 +37,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
 
   final ImagePicker _picker = ImagePicker();
   final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
+  static const MethodChannel _mapsChannel = MethodChannel('we_drive/maps');
 
   @override
   void initState() {
@@ -57,29 +59,60 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     final address = destinationAddress.trim();
     if (address.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pickup location is not available.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pickup location is not available.')),
+      );
       return;
     }
 
-    final encoded = Uri.encodeComponent(address);
-    final uris = <Uri>[
-      Uri.parse('google.navigation:q=$encoded&mode=d'),
-      Uri.parse('geo:0,0?q=$encoded'),
-      Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$encoded&travelmode=driving&dir_action=navigate'),
-    ];
+    // Android: use an explicit Google Maps intent first. This avoids Android
+    // package-visibility/browser-handler issues and starts turn-by-turn driving.
+    if (Platform.isAndroid) {
+      try {
+        final opened = await _mapsChannel.invokeMethod<bool>(
+          'openGoogleMaps',
+          <String, dynamic>{'destination': address},
+        );
+        if (opened == true) return;
+      } catch (e) {
+        debugPrint('Native Google Maps launch failed: $e');
+      }
+    }
 
-    for (final uri in uris) {
+    // Universal Maps URL: Google documents this as the cross-platform fallback;
+    // it opens the Maps app when installed and otherwise opens Maps in a browser.
+    final directionsUri = Uri.https(
+      'www.google.com',
+      '/maps/dir/',
+      <String, String>{
+        'api': '1',
+        'destination': address,
+        'travelmode': 'driving',
+        'dir_action': 'navigate',
+      },
+    );
+    final searchUri = Uri.https(
+      'www.google.com',
+      '/maps/search/',
+      <String, String>{
+        'api': '1',
+        'query': address,
+      },
+    );
+    final geoUri = Uri.parse('geo:0,0?q=${Uri.encodeComponent(address)}');
+
+    for (final uri in <Uri>[directionsUri, searchUri, geoUri]) {
       try {
         if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
       } catch (e) {
-        debugPrint('Navigation attempt failed for $uri: $e');
+        debugPrint('Maps fallback launch failed for $uri: $e');
       }
     }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Could not launch Google Maps. Please make sure Google Maps is installed.'),
+        content: Text('Google Maps could not be opened. Please install or enable Google Maps or a web browser.'),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
       ),
@@ -90,7 +123,9 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     final phone = widget.booking.customerPhone?.replaceAll(RegExp(r'\D'), '') ?? '';
     if (phone.length < 10) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Customer contact number is not available for this booking.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Customer contact number is not available for this booking.')),
+      );
       return;
     }
     final local = phone.startsWith('91') && phone.length == 12 ? phone.substring(2) : phone;
@@ -98,7 +133,9 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
       if (await launchUrl(Uri.parse('tel:+91$local'))) return;
     } catch (_) {}
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open the phone dialer.')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not open the phone dialer.')),
+    );
   }
 
   Future<void> _capturePhoto(String type) async {
@@ -117,10 +154,14 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         if (type == 'PostLeft') postTripLeft = File(image.path);
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$type photo captured successfully!'), behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$type photo captured successfully!'), behavior: SnackBarBehavior.floating),
+      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to capture photo: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to capture photo: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+      );
     }
   }
 
@@ -206,15 +247,21 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         widget.booking.status = nextStatus;
         isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(nextStatus == 'CANCELLED' ? 'Booking declined successfully.' : 'Booking status updated to: $nextStatus'), behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(nextStatus == 'CANCELLED' ? 'Booking declined successfully.' : 'Booking status updated to: $nextStatus'), behavior: SnackBarBehavior.floating),
+      );
     } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Booking action failed.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? 'Booking action failed.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('StateError: ', '')), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('StateError: ', '')), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
+      );
     }
   }
 
@@ -223,7 +270,11 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(color: isCaptured ? Colors.green.withOpacity(0.05) : Colors.transparent, borderRadius: BorderRadius.circular(8), border: Border.all(color: isCaptured ? Colors.green.withOpacity(0.3) : Colors.grey.withOpacity(0.2))),
+      decoration: BoxDecoration(
+        color: isCaptured ? Colors.green.withOpacity(0.05) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: isCaptured ? Colors.green.withOpacity(0.3) : Colors.grey.withOpacity(0.2)),
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
