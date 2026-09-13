@@ -12,5 +12,7 @@ analyzer:
     use_build_context_synchronously: ignore
     avoid_print: ignore
     dead_null_aware_expression: ignore
+    prefer_interpolation_to_compose_strings: ignore
+    unused_import: ignore
 
 include: package:flutter_lints/flutter.yaml
