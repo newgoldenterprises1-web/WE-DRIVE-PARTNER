@@ -5,9 +5,11 @@ service firebase.storage {
     function isDriver() { return signedIn() && request.auth.token.role == 'driver'; }
 
     match /inspections/{folder}/{fileName} {
-      allow read, write: if isDriver()
+      allow read: if isDriver();
+      allow create, update: if isDriver()
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+      allow delete: if false;
     }
 
     match /{allPaths=**} {
