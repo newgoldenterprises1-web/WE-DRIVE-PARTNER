@@ -1,9 +1,30 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function isDriver() { return signedIn() && request.auth.token.role == 'driver'; }
-    function isCustomer() { return signedIn() && request.auth.token.role == 'customer'; }
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isDriver() {
+      return signedIn() && request.auth.token.role == 'driver';
+    }
+
+    function isCustomer() {
+      return signedIn() && request.auth.token.role == 'customer';
+    }
+
+    function driverOwnsBooking() {
+      return isDriver() && resource.data.partnerId == request.auth.uid;
+    }
+
+    function validDriverTransition() {
+      return isDriver() && resource.data.partnerId == request.auth.uid && (
+        (resource.data.status == 'ACCEPTED' && request.resource.data.status == 'ARRIVING') ||
+        (resource.data.status == 'ARRIVING' && request.resource.data.status == 'ARRIVED') ||
+        (resource.data.status == 'ARRIVED' && request.resource.data.status == 'TRIP_STARTED') ||
+        (resource.data.status == 'TRIP_STARTED' && request.resource.data.status == 'COMPLETED')
+      );
+    }
 
     match /partners/{partnerId} {
       allow read: if signedIn() && (request.auth.uid == partnerId || isCustomer());
@@ -17,14 +38,32 @@ service cloud.firestore {
     }
 
     match /bookings/{bookingId} {
-      // Booking feeds are read only by authenticated app users. State changes
-      // should be performed by the callable backend for atomic assignment.
-      allow read: if signedIn();
-      allow create: if isCustomer() || isDriver();
-      allow update: if signedIn() && (
-        (isDriver() && resource.data.partnerId == request.auth.uid) ||
+      // Drivers can see unassigned incoming requests and their own assigned rides.
+      // Customers can see only their own bookings.
+      allow get: if signedIn() && (
+        (isDriver() && (
+          resource.data.partnerId == request.auth.uid ||
+          resource.data.status in ['SEARCHING', 'REQUESTED']
+        )) ||
         (isCustomer() && resource.data.customerId == request.auth.uid)
       );
+
+      allow list: if signedIn();
+
+      // Only customers create bookings. Driver assignment is server-side.
+      allow create: if isCustomer() && request.resource.data.customerId == request.auth.uid;
+
+      // Driver status changes are tightly limited to the assigned booking.
+      // ACCEPTED/CANCELLED assignment is performed by callable backend functions.
+      allow update: if validDriverTransition()
+        && request.resource.data.partnerId == resource.data.partnerId
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.fare == resource.data.fare
+      || (
+        isCustomer() &&
+        resource.data.customerId == request.auth.uid
+      );
+
       allow delete: if false;
     }
 
