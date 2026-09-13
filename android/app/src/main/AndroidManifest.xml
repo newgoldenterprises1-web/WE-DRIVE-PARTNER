@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Network access required by MSG91 OTP SDK, Firebase and backend APIs -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <!-- Camera and media permissions for vehicle inspection -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
