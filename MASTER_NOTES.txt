@@ -1,31 +1,48 @@
-WE DRIVE PARTNER — PRODUCTION COMPLETION MASTER NOTE
+WE DRIVE PARTNER — CURRENT PRODUCTION COMPLETION MASTER NOTE
 
-Frontend baseline: premium UI/screens preserved; no redesign.
+Frontend baseline: existing premium UI direction preserved; no intentional redesign.
 
-Implemented in repository:
-- Splash/navigation/auth UI
-- MSG91 WhatsApp-first OTP with SMS retry client integration
-- Firebase custom-token authentication bridge
-- Secure MSG91 Authkey backend secret integration
-- Firestore-backed booking feed and booking status workflow
-- Atomic backend booking acceptance / decline
-- Partner online/offline backend presence
-- Live partner GPS service with Android location permissions
-- Firestore partner location persistence
-- Firebase Storage vehicle inspection uploads
-- Idempotent completed-trip earnings ledger
+Current authentication:
+- Firebase Phone Authentication sends and verifies the driver SMS OTP.
+- Firebase billing/Blaze is required for real verification SMS and is configured outside source control.
+- After successful OTP, the app calls the secure Firebase callable ensureDriverAccount function.
+- The backend assigns the driver custom claim and creates/updates partners/{uid}.
+- The client force-refreshes the Firebase ID token so Firestore/Storage rules immediately recognize role=driver.
+
+Current production-connected features:
+- Splash and Firebase session restoration
+- Dynamic driver phone authentication
+- Driver account bootstrap and role claim
+- Firestore partner profile
+- Online/offline presence
+- Live GPS location through asia-south1 callable functions
+- Firestore booking feed for incoming and assigned rides
+- Atomic booking acceptance
+- Driver decline tracking
+- Secure booking status progression
+- Pre-trip 4-side vehicle inspection + driver selfie uploads
+- Post-trip 4-side vehicle inspection uploads
+- External Google Maps navigation
+- Real customer phone dialer when booking contains customerPhone
+- Firebase Storage inspection uploads
+- Completed-trip earnings ledger with 85% driver share
+- Firestore-backed earnings analytics
+- Firestore-backed notifications
+- Bank/payout profile storage
+- Verification/KYC status storage
 - Firestore and Storage security rules
-- Firebase deployment configuration for functions/rules
-- Release signing configuration with private keystore support and local debug fallback
-- Signing secrets/keystores excluded from Git
+- Firestore composite index configuration
 
-Production credentials/deployment that must be performed outside source control:
-1. Set a NEW MSG91 Authkey in Firebase Secret Manager: MSG91_AUTHKEY.
-2. Build the app with the private MSG91 widget auth token supplied through --dart-define=MSG91_AUTH_TOKEN=...
-3. Deploy Firebase Functions + Firestore + Storage rules to project we-drive-4315.
-4. Test MSG91 OTP on a real Android device with WhatsApp and SMS fallback.
-5. Enable/configure Google Maps Platform if an embedded map is required; navigation can already open Google Maps externally.
-6. Generate and protect the Play Store release keystore; create android/key.properties locally.
-7. Run release APK/AAB tests on a physical Android device.
+Payment intentionally excluded from completion as requested.
 
-Important: source code can be made production-ready, but external credentials, Firebase deployment, third-party channel approval, and physical-device QA cannot honestly be marked completed until actually executed and verified.
+Required external execution before claiming deployment is complete:
+1. Deploy Firebase Functions, Firestore rules/indexes and Storage rules to project we-drive-4315.
+2. Run flutter pub get and rebuild the Android app.
+3. Test with a real driver phone number and confirm OTP -> driver claim -> Home.
+4. Test online/offline permission and live GPS.
+5. Test two drivers against the same booking to confirm only one can accept it.
+6. Test the complete booking state machine and inspection uploads.
+7. Test completed-trip earnings and notifications.
+8. Generate the production signed AAB after final physical-device QA.
+
+No secret keys are stored in source control.
