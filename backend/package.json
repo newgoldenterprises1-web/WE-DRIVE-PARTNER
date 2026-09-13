@@ -1,0 +1,19 @@
+{
+  "name": "we-drive-auth-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "External backend for WE DRIVE MSG91 OTP verification and Firebase Admin authentication",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "firebase-admin": "^13.5.0"
+  }
+}
