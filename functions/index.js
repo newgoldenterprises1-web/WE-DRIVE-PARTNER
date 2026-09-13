@@ -98,7 +98,6 @@ exports.updateDriverLocation = onCall(
     }
 
     await db.collection('partners').doc(uid).set({
-      online: true,
       latitude,
       longitude,
       locationAccuracy: Number(request.data?.accuracy || 0),
@@ -116,6 +115,12 @@ exports.acceptBooking = onCall(
     const uid = requireDriver(request);
     const bookingId = String(request.data?.bookingId || '');
     if (!bookingId) throw new HttpsError('invalid-argument', 'Booking ID is required.');
+
+    const partnerRef = db.collection('partners').doc(uid);
+    const partnerSnap = await partnerRef.get();
+    if (!partnerSnap.exists || partnerSnap.data()?.online !== true) {
+      throw new HttpsError('failed-precondition', 'Go online before accepting a booking.');
+    }
 
     const ref = db.collection('bookings').doc(bookingId);
     await db.runTransaction(async (tx) => {
