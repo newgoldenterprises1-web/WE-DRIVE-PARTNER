@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Network access required by MSG91 OTP SDK, Firebase and backend APIs -->
+    <!-- Network access required by Firebase and backend APIs -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Camera and media permissions for vehicle inspection -->
@@ -38,10 +38,21 @@
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
+
+    <!-- Allow url_launcher to check browser/Google Maps HTTPS handlers on Android 11+. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <category android:name="android.intent.category.BROWSABLE"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
         </intent>
     </queries>
 </manifest>
