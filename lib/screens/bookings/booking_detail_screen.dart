@@ -59,46 +59,26 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     final address = destinationAddress.trim();
     if (address.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pickup location is not available.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pickup location is not available.')));
       return;
     }
 
-    // Android: use an explicit Google Maps intent first. This avoids Android
-    // package-visibility/browser-handler issues and starts turn-by-turn driving.
     if (Platform.isAndroid) {
       try {
-        final opened = await _mapsChannel.invokeMethod<bool>(
-          'openGoogleMaps',
-          <String, dynamic>{'destination': address},
-        );
+        final opened = await _mapsChannel.invokeMethod<bool>('openGoogleMaps', <String, dynamic>{'destination': address});
         if (opened == true) return;
       } catch (e) {
         debugPrint('Native Google Maps launch failed: $e');
       }
     }
 
-    // Universal Maps URL: Google documents this as the cross-platform fallback;
-    // it opens the Maps app when installed and otherwise opens Maps in a browser.
-    final directionsUri = Uri.https(
-      'www.google.com',
-      '/maps/dir/',
-      <String, String>{
-        'api': '1',
-        'destination': address,
-        'travelmode': 'driving',
-        'dir_action': 'navigate',
-      },
-    );
-    final searchUri = Uri.https(
-      'www.google.com',
-      '/maps/search/',
-      <String, String>{
-        'api': '1',
-        'query': address,
-      },
-    );
+    final directionsUri = Uri.https('www.google.com', '/maps/dir/', <String, String>{
+      'api': '1',
+      'destination': address,
+      'travelmode': 'driving',
+      'dir_action': 'navigate',
+    });
+    final searchUri = Uri.https('www.google.com', '/maps/search/', <String, String>{'api': '1', 'query': address});
     final geoUri = Uri.parse('geo:0,0?q=${Uri.encodeComponent(address)}');
 
     for (final uri in <Uri>[directionsUri, searchUri, geoUri]) {
@@ -110,22 +90,18 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Google Maps could not be opened. Please install or enable Google Maps or a web browser.'),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Google Maps could not be opened. Please install or enable Google Maps or a web browser.'),
+      backgroundColor: Colors.red,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   Future<void> _contactCustomer() async {
     final phone = widget.booking.customerPhone?.replaceAll(RegExp(r'\D'), '') ?? '';
     if (phone.length < 10) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Customer contact number is not available for this booking.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Customer contact number is not available for this booking.')));
       return;
     }
     final local = phone.startsWith('91') && phone.length == 12 ? phone.substring(2) : phone;
@@ -133,9 +109,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
       if (await launchUrl(Uri.parse('tel:+91$local'))) return;
     } catch (_) {}
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Could not open the phone dialer.')),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open the phone dialer.')));
   }
 
   Future<void> _capturePhoto(String type) async {
@@ -154,14 +128,10 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         if (type == 'PostLeft') postTripLeft = File(image.path);
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$type photo captured successfully!'), behavior: SnackBarBehavior.floating),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$type photo captured successfully!'), behavior: SnackBarBehavior.floating));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to capture photo: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to capture photo: $e'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
     }
   }
 
@@ -169,10 +139,19 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
   bool get areAllPostTripPhotosCaptured => postTripFront != null && postTripBack != null && postTripRight != null && postTripLeft != null;
 
   Future<String?> _uploadImageToStorageWithRetry(File imageFile, String folderName, {int retries = 3}) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+
     for (var i = 0; i < retries; i++) {
       try {
-        final fileName = '${widget.booking.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-        final ref = FirebaseStorage.instance.ref().child('inspections').child(folderName).child(fileName);
+        final fileName = '${DateTime.now().millisecondsSinceEpoch}_${imageFile.uri.pathSegments.isNotEmpty ? imageFile.uri.pathSegments.last : 'photo'}.jpg';
+        final ref = FirebaseStorage.instance
+            .ref()
+            .child('inspections')
+            .child(uid)
+            .child(widget.booking.id)
+            .child(folderName)
+            .child(fileName);
         final snapshot = await ref.putFile(imageFile);
         return await snapshot.ref.getDownloadURL();
       } catch (e) {
@@ -190,14 +169,54 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) throw StateError('Partner session is not available.');
     final partner = await FirebaseFirestore.instance.collection('partners').doc(uid).get();
-    if (!partner.exists || partner.data()?['online'] != true) {
-      throw StateError('Go online before accepting a booking.');
-    }
+    if (!partner.exists || partner.data()?['online'] != true) throw StateError('Go online before accepting a booking.');
     await _functions.httpsCallable('acceptBooking').call({'bookingId': widget.booking.id});
   }
 
   Future<void> _declineBooking() async {
     await _functions.httpsCallable('declineBooking').call({'bookingId': widget.booking.id});
+  }
+
+  Future<void> _transitionBooking(String nextStatus) async {
+    final payload = <String, dynamic>{'bookingId': widget.booking.id, 'status': nextStatus};
+
+    if (nextStatus == 'TRIP_STARTED') {
+      if (!areAllPreTripPhotosCaptured) throw StateError('Please capture all pre-trip photos first.');
+      final uploads = await Future.wait([
+        _uploadImageToStorageWithRetry(preTripFront!, 'pre_trip'),
+        _uploadImageToStorageWithRetry(preTripBack!, 'pre_trip'),
+        _uploadImageToStorageWithRetry(preTripRight!, 'pre_trip'),
+        _uploadImageToStorageWithRetry(preTripLeft!, 'pre_trip'),
+        _uploadImageToStorageWithRetry(driverSelfie!, 'selfies'),
+      ]);
+      if (uploads.any((url) => url == null)) throw StateError('One or more inspection photos failed to upload. Please retry.');
+      payload.addAll({
+        'preTripFrontUrl': uploads[0],
+        'preTripBackUrl': uploads[1],
+        'preTripRightUrl': uploads[2],
+        'preTripLeftUrl': uploads[3],
+        'driverSelfieUrl': uploads[4],
+      });
+    }
+
+    if (nextStatus == 'COMPLETED') {
+      if (!areAllPostTripPhotosCaptured) throw StateError('Please capture all post-trip photos first.');
+      final uploads = await Future.wait([
+        _uploadImageToStorageWithRetry(postTripFront!, 'post_trip'),
+        _uploadImageToStorageWithRetry(postTripBack!, 'post_trip'),
+        _uploadImageToStorageWithRetry(postTripRight!, 'post_trip'),
+        _uploadImageToStorageWithRetry(postTripLeft!, 'post_trip'),
+      ]);
+      if (uploads.any((url) => url == null)) throw StateError('One or more post-trip photos failed to upload. Please retry.');
+      payload.addAll({
+        'postTripFrontUrl': uploads[0],
+        'postTripBackUrl': uploads[1],
+        'postTripRightUrl': uploads[2],
+        'postTripLeftUrl': uploads[3],
+      });
+    }
+
+    await _functions.httpsCallable('transitionBooking').call(payload);
   }
 
   Future<void> changeStatus(String nextStatus) async {
@@ -209,36 +228,7 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
       } else if (nextStatus == 'CANCELLED') {
         await _declineBooking();
       } else {
-        final updateData = <String, dynamic>{'status': nextStatus, 'updatedAt': FieldValue.serverTimestamp()};
-        if (nextStatus == 'ARRIVING') updateData['arrivingAt'] = FieldValue.serverTimestamp();
-        if (nextStatus == 'ARRIVED') updateData['arrivedAt'] = FieldValue.serverTimestamp();
-
-        if (nextStatus == 'TRIP_STARTED') {
-          if (!areAllPreTripPhotosCaptured) throw StateError('Please capture all pre-trip photos first.');
-          final uploads = await Future.wait([
-            _uploadImageToStorageWithRetry(preTripFront!, 'pre_trip'),
-            _uploadImageToStorageWithRetry(preTripBack!, 'pre_trip'),
-            _uploadImageToStorageWithRetry(preTripRight!, 'pre_trip'),
-            _uploadImageToStorageWithRetry(preTripLeft!, 'pre_trip'),
-            _uploadImageToStorageWithRetry(driverSelfie!, 'selfies'),
-          ]);
-          if (uploads.any((url) => url == null)) throw StateError('One or more inspection photos failed to upload. Please retry.');
-          updateData.addAll({'preTripFrontUrl': uploads[0], 'preTripBackUrl': uploads[1], 'preTripRightUrl': uploads[2], 'preTripLeftUrl': uploads[3], 'driverSelfieUrl': uploads[4], 'startedAt': FieldValue.serverTimestamp()});
-        }
-
-        if (nextStatus == 'COMPLETED') {
-          if (!areAllPostTripPhotosCaptured) throw StateError('Please capture all post-trip photos first.');
-          final uploads = await Future.wait([
-            _uploadImageToStorageWithRetry(postTripFront!, 'post_trip'),
-            _uploadImageToStorageWithRetry(postTripBack!, 'post_trip'),
-            _uploadImageToStorageWithRetry(postTripRight!, 'post_trip'),
-            _uploadImageToStorageWithRetry(postTripLeft!, 'post_trip'),
-          ]);
-          if (uploads.any((url) => url == null)) throw StateError('One or more post-trip photos failed to upload. Please retry.');
-          updateData.addAll({'postTripFrontUrl': uploads[0], 'postTripBackUrl': uploads[1], 'postTripRightUrl': uploads[2], 'postTripLeftUrl': uploads[3], 'completedAt': FieldValue.serverTimestamp()});
-        }
-
-        await FirebaseFirestore.instance.collection('bookings').doc(widget.booking.id).set(updateData, SetOptions(merge: true));
+        await _transitionBooking(nextStatus);
       }
 
       if (!mounted) return;
@@ -247,21 +237,18 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
         widget.booking.status = nextStatus;
         isLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(nextStatus == 'CANCELLED' ? 'Booking declined successfully.' : 'Booking status updated to: $nextStatus'), behavior: SnackBarBehavior.floating),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(nextStatus == 'CANCELLED' ? 'Booking declined successfully.' : 'Booking status updated to: $nextStatus'),
+        behavior: SnackBarBehavior.floating,
+      ));
     } on FirebaseFunctionsException catch (e) {
       if (!mounted) return;
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Booking action failed.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message ?? 'Booking action failed.'), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
     } catch (e) {
       if (!mounted) return;
       setState(() => isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('StateError: ', '')), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceFirst('StateError: ', '')), backgroundColor: Colors.red, behavior: SnackBarBehavior.floating));
     }
   }
 
