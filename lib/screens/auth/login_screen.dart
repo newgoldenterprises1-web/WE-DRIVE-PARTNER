@@ -49,12 +49,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _extractRequestId(Map<String, dynamic> response) {
     final candidates = <dynamic>[
-      response['reqId'], response['reqid'], response['requestId'], response['request_id'],
+      response['reqId'],
+      response['reqid'],
+      response['requestId'],
+      response['request_id'],
+      response['message'],
       response['data'] is Map ? response['data']['reqId'] : null,
       response['data'] is Map ? response['data']['requestId'] : null,
+      response['data'] is Map ? response['data']['message'] : null,
     ];
     for (final candidate in candidates) {
-      if (candidate is String && candidate.trim().isNotEmpty) return candidate.trim();
+      if (candidate is String && candidate.trim().isNotEmpty) {
+        return candidate.trim();
+      }
     }
     return '';
   }
