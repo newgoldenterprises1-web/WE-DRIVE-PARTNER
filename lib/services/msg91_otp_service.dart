@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
@@ -13,17 +14,37 @@ class Msg91OtpService {
   static const String authToken = String.fromEnvironment('MSG91_AUTH_TOKEN');
   static const String apiBaseUrl = String.fromEnvironment('WE_DRIVE_API_BASE_URL');
 
-  bool get isConfigured => authToken.isNotEmpty && apiBaseUrl.isNotEmpty;
+  bool _initialized = false;
+
+  bool get isConfigured => authToken.trim().isNotEmpty && apiBaseUrl.trim().isNotEmpty;
 
   void initialize() {
     _ensureConfigured();
-    OTPWidget.initializeWidget(widgetId, authToken);
+    if (_initialized) return;
+
+    final token = authToken.trim();
+    OTPWidget.initializeWidget(widgetId, token);
+    _initialized = true;
+    developer.log('MSG91 OTP widget initialized: $widgetId', name: 'WE_DRIVE_OTP');
   }
 
   Future<Map<String, dynamic>> sendOtp(String phoneNumber) async {
-    _ensureConfigured();
-    final response = await OTPWidget.sendOTP({'identifier': phoneNumber});
-    return _asMap(response);
+    initialize();
+
+    final identifier = phoneNumber.trim();
+    if (!RegExp(r'^\d{12}$').hasMatch(identifier)) {
+      throw StateError('Invalid OTP mobile identifier. Expected country code + 10 digit mobile number.');
+    }
+
+    try {
+      final response = await OTPWidget.sendOTP({'identifier': identifier});
+      final result = _asMap(response);
+      developer.log('MSG91 Send OTP response received: $result', name: 'WE_DRIVE_OTP');
+      return result;
+    } catch (e, stackTrace) {
+      developer.log('MSG91 Send OTP failed: $e', name: 'WE_DRIVE_OTP', error: e, stackTrace: stackTrace);
+      throw StateError(_friendlyMsg91Error(e));
+    }
   }
 
   Future<Map<String, dynamic>> verifyOtp({
@@ -31,7 +52,8 @@ class Msg91OtpService {
     required String otp,
     required String phoneNumber,
   }) async {
-    _ensureConfigured();
+    initialize();
+
     final response = await OTPWidget.verifyOTP({
       'reqId': requestId,
       'otp': otp,
@@ -64,25 +86,35 @@ class Msg91OtpService {
   }
 
   Future<Map<String, dynamic>> retryViaWhatsApp(String requestId) async {
-    _ensureConfigured();
-    final response = await OTPWidget.retryOTP({
-      'reqId': requestId,
-      'retryChannel': 12,
-    });
-    return _asMap(response);
+    initialize();
+    try {
+      final response = await OTPWidget.retryOTP({
+        'reqId': requestId,
+        'retryChannel': 12,
+      });
+      return _asMap(response);
+    } catch (e, stackTrace) {
+      developer.log('MSG91 WhatsApp retry failed: $e', name: 'WE_DRIVE_OTP', error: e, stackTrace: stackTrace);
+      throw StateError(_friendlyMsg91Error(e));
+    }
   }
 
   Future<Map<String, dynamic>> retryViaSms(String requestId) async {
-    _ensureConfigured();
-    final response = await OTPWidget.retryOTP({
-      'reqId': requestId,
-      'retryChannel': 11,
-    });
-    return _asMap(response);
+    initialize();
+    try {
+      final response = await OTPWidget.retryOTP({
+        'reqId': requestId,
+        'retryChannel': 11,
+      });
+      return _asMap(response);
+    } catch (e, stackTrace) {
+      developer.log('MSG91 SMS retry failed: $e', name: 'WE_DRIVE_OTP', error: e, stackTrace: stackTrace);
+      throw StateError(_friendlyMsg91Error(e));
+    }
   }
 
   void _ensureConfigured() {
-    if (authToken.isEmpty || apiBaseUrl.isEmpty) {
+    if (authToken.trim().isEmpty || apiBaseUrl.trim().isEmpty) {
       throw StateError(
         'OTP backend is not configured. Build with --dart-define=MSG91_AUTH_TOKEN=YOUR_TOKEN '
         '--dart-define=WE_DRIVE_API_BASE_URL=https://YOUR-BACKEND-URL',
@@ -128,5 +160,11 @@ class Msg91OtpService {
       }
     }
     return '';
+  }
+
+  String _friendlyMsg91Error(Object error) {
+    final message = error.toString().replaceFirst('StateError: ', '').trim();
+    if (message.isEmpty) return 'MSG91 could not send the OTP. Please try again.';
+    return message;
   }
 }
