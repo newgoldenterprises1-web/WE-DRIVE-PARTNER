@@ -46,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _phoneForMsg91() {
     final digits = _phoneController.text.replaceAll(RegExp(r'\D'), '');
-    if (digits.length != 10 || !digits.startsWith(RegExp(r'[6-9]'))) {
+    if (digits.length != 10 || !RegExp(r'^[6-9]').hasMatch(digits)) {
       return '';
     }
     return '91$digits';
@@ -190,10 +190,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: TextStyle(color: AppColors.muted, height: 1.35),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    '+$phone',
-                    style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy),
-                  ),
+                  Text('+$phone', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.navy)),
                   const SizedBox(height: 18),
                   TextField(
                     controller: otpController,
@@ -262,26 +259,14 @@ class _LoginScreenState extends State<LoginScreen> {
                         decoration: BoxDecoration(
                           color: AppColors.navy,
                           borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.navy.withOpacity(0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
+                          boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))],
                         ),
                         child: const Icon(Icons.local_taxi_rounded, color: AppColors.gold, size: 42),
                       ),
                       const SizedBox(height: 18),
-                      const Text(
-                        'WE DRIVE',
-                        style: TextStyle(color: AppColors.navy, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: 1.5),
-                      ),
+                      const Text('WE DRIVE', style: TextStyle(color: AppColors.navy, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: 1.5)),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Partner Portal • Hyderabad',
-                        style: TextStyle(color: AppColors.muted, fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
+                      const Text('Partner Portal • Hyderabad', style: TextStyle(color: AppColors.muted, fontSize: 13, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -298,11 +283,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF7F9FC),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
+                        decoration: BoxDecoration(color: const Color(0xFFF7F9FC), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade200)),
                         child: Row(
                           children: [
                             Expanded(
@@ -331,15 +312,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Text(
-                        isSignUp ? 'Create Partner Account' : 'Welcome Back',
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.navy),
-                      ),
+                      Text(isSignUp ? 'Create Partner Account' : 'Welcome Back', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.navy)),
                       const SizedBox(height: 6),
-                      Text(
-                        isSignUp ? 'Join Hyderabad’s premier chauffeur network.' : 'Continue securely with WhatsApp OTP.',
-                        style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.3),
-                      ),
+                      Text(isSignUp ? 'Join Hyderabad’s premier chauffeur network.' : 'Continue securely with WhatsApp OTP.', style: const TextStyle(color: AppColors.muted, fontSize: 12, height: 1.3)),
                       const SizedBox(height: 20),
                       if (isSignUp) ...[
                         TextField(
@@ -386,9 +361,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      const Center(
-                        child: Text('Secure OTP verification • SMS fallback available', style: TextStyle(color: AppColors.muted, fontSize: 11)),
-                      ),
+                      const Center(child: Text('Secure OTP verification • SMS fallback available', style: TextStyle(color: AppColors.muted, fontSize: 11))),
                     ],
                   ),
                 ),
