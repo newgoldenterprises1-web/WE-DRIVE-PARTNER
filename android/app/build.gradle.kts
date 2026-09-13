@@ -47,15 +47,13 @@ android {
 
     buildTypes {
         release {
-            // Uses the private production keystore when android/key.properties exists.
-            // Falls back to debug signing locally so release packaging can still be tested.
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")
             }
-            minifyEnabled = false
-            shrinkResources = false
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
