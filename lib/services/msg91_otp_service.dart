@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
 
 class Msg91OtpService {
@@ -12,11 +13,7 @@ class Msg91OtpService {
   bool get isConfigured => authToken.isNotEmpty;
 
   void initialize() {
-    if (!isConfigured) {
-      throw StateError(
-        'MSG91_AUTH_TOKEN is not configured. Build with --dart-define=MSG91_AUTH_TOKEN=YOUR_TOKEN',
-      );
-    }
+    _ensureConfigured();
     OTPWidget.initializeWidget(widgetId, authToken);
   }
 
@@ -50,8 +47,15 @@ class Msg91OtpService {
       'accessToken': accessToken,
       'phoneNumber': phoneNumber,
     });
+    final firebaseData = _asMap(firebaseResponse.data);
+    final customToken = firebaseData['customToken'];
 
-    return _asMap(firebaseResponse.data);
+    if (customToken is! String || customToken.isEmpty) {
+      throw StateError('Authentication server did not return a Firebase custom token.');
+    }
+
+    await FirebaseAuth.instance.signInWithCustomToken(customToken);
+    return firebaseData;
   }
 
   Future<Map<String, dynamic>> retryViaWhatsApp(String requestId) async {
