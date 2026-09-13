@@ -248,6 +248,77 @@ exports.declineBooking = onCall(
   },
 );
 
+exports.transitionBooking = onCall(
+  { region: 'asia-south1' },
+  async (request) => {
+    const uid = requireDriver(request);
+    const bookingId = String(request.data?.bookingId || '').trim();
+    const nextStatus = String(request.data?.status || '').trim().toUpperCase();
+
+    if (!bookingId) {
+      throw new HttpsError('invalid-argument', 'Booking ID is required.');
+    }
+    if (!['ARRIVING', 'ARRIVED', 'TRIP_STARTED', 'COMPLETED'].includes(nextStatus)) {
+      throw new HttpsError('invalid-argument', 'Unsupported booking status transition.');
+    }
+
+    const bookingRef = db.collection('bookings').doc(bookingId);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(bookingRef);
+      if (!snap.exists) {
+        throw new HttpsError('not-found', 'Booking not found.');
+      }
+
+      const data = snap.data() || {};
+      const currentStatus = String(data.status || '').toUpperCase();
+      const partnerId = String(data.partnerId || '');
+      if (partnerId !== uid) {
+        throw new HttpsError('permission-denied', 'This booking is not assigned to you.');
+      }
+
+      const allowed = {
+        ACCEPTED: 'ARRIVING',
+        ARRIVING: 'ARRIVED',
+        ARRIVED: 'TRIP_STARTED',
+        TRIP_STARTED: 'COMPLETED',
+      };
+      if (allowed[currentStatus] !== nextStatus) {
+        throw new HttpsError('failed-precondition', `Invalid transition from ${currentStatus} to ${nextStatus}.`);
+      }
+
+      const update = {
+        status: nextStatus,
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+
+      if (nextStatus === 'ARRIVING') update.arrivingAt = FieldValue.serverTimestamp();
+      if (nextStatus === 'ARRIVED') update.arrivedAt = FieldValue.serverTimestamp();
+
+      if (nextStatus === 'TRIP_STARTED') {
+        const required = ['preTripFrontUrl', 'preTripBackUrl', 'preTripRightUrl', 'preTripLeftUrl', 'driverSelfieUrl'];
+        if (required.some((field) => typeof request.data?.[field] !== 'string' || !request.data[field].trim())) {
+          throw new HttpsError('invalid-argument', 'All pre-trip inspection photos are required.');
+        }
+        for (const field of required) update[field] = request.data[field].trim();
+        update.startedAt = FieldValue.serverTimestamp();
+      }
+
+      if (nextStatus === 'COMPLETED') {
+        const required = ['postTripFrontUrl', 'postTripBackUrl', 'postTripRightUrl', 'postTripLeftUrl'];
+        if (required.some((field) => typeof request.data?.[field] !== 'string' || !request.data[field].trim())) {
+          throw new HttpsError('invalid-argument', 'All post-trip inspection photos are required.');
+        }
+        for (const field of required) update[field] = request.data[field].trim();
+        update.completedAt = FieldValue.serverTimestamp();
+      }
+
+      tx.set(bookingRef, update, { merge: true });
+    });
+
+    return { ok: true, bookingId, status: nextStatus };
+  },
+);
+
 exports.onBookingWritten = onDocumentWritten(
   { document: 'bookings/{bookingId}', region: 'asia-south1' },
   async (event) => {
