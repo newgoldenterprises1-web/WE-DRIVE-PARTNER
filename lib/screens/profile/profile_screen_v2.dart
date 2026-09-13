@@ -5,6 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/partner_presence_service.dart';
 import '../../theme/app_theme.dart';
+import '../account/account_screen.dart';
+import 'verification_screen.dart';
 
 class ProfileScreenV2 extends StatefulWidget {
   const ProfileScreenV2({super.key});
@@ -26,7 +28,10 @@ class _ProfileScreenV2State extends State<ProfileScreenV2> {
 
   Future<void> _load() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      if (mounted) setState(() => loading = false);
+      return;
+    }
     try {
       final doc = await FirebaseFirestore.instance.collection('partners').doc(user.uid).get();
       if (!mounted) return;
@@ -101,11 +106,38 @@ class _ProfileScreenV2State extends State<ProfileScreenV2> {
   }
 
   Future<void> _callSupport() async {
-    await launchUrl(Uri.parse('tel:+914068927800'));
+    final launched = await launchUrl(Uri.parse('tel:+914068927800'), mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open the phone dialer.')));
+    }
   }
 
   Future<void> _emailSupport() async {
-    await launchUrl(Uri.parse('mailto:support@wedrive.co.in?subject=WE%20DRIVE%20Partner%20Support'));
+    final launched = await launchUrl(Uri.parse('mailto:support@wedrive.co.in?subject=WE%20DRIVE%20Partner%20Support'), mode: LaunchMode.externalApplication);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open the email app.')));
+    }
+  }
+
+  void _showVehicleDetails() {
+    final vehicle = data['vehicleModel'] ?? data['vehicleType'] ?? 'Not assigned';
+    final number = data['vehicleNumber'] ?? 'Not assigned';
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Assigned Vehicle', style: TextStyle(fontWeight: FontWeight.w900, color: AppColors.navy)),
+        content: Text('Vehicle: $vehicle\nVehicle Number: $number'),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('CLOSE'))],
+      ),
+    );
+  }
+
+  void _openVerification() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const VerificationScreen()));
+  }
+
+  void _openBankDetails() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AccountScreen()));
   }
 
   Widget _menuTile(IconData icon, String title, String subtitle, VoidCallback onTap) {
@@ -173,9 +205,9 @@ class _ProfileScreenV2State extends State<ProfileScreenV2> {
                 const SizedBox(height: 20),
                 const Text('Account Settings & Documents', style: TextStyle(color: AppColors.navy, fontSize: 16, fontWeight: FontWeight.w900)),
                 const SizedBox(height: 10),
-                _menuTile(Icons.directions_car_rounded, 'Assigned Vehicle', '$vehicle • $vehicleNumber', () {}),
-                _menuTile(Icons.verified_user_rounded, 'Driving License & Badge', dl, () {}),
-                _menuTile(Icons.account_balance_rounded, 'Bank & Payout Details', 'Manage from Account tab', () {}),
+                _menuTile(Icons.directions_car_rounded, 'Assigned Vehicle', '$vehicle • $vehicleNumber', _showVehicleDetails),
+                _menuTile(Icons.verified_user_rounded, 'Driving License & Badge', dl, _openVerification),
+                _menuTile(Icons.account_balance_rounded, 'Bank & Payout Details', 'Manage from Account tab', _openBankDetails),
                 _menuTile(Icons.support_agent_rounded, 'We Drive Partner Support', '24/7 Helpline Available', _callSupport),
                 _menuTile(Icons.email_outlined, 'Partner Email Support', 'support@wedrive.co.in', _emailSupport),
                 _menuTile(Icons.privacy_tip_rounded, 'Terms & Safety Guidelines', 'View policies', () {
