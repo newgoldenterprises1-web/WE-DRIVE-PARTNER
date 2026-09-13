@@ -86,7 +86,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
         decoration: BoxDecoration(
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 10,
               offset: const Offset(0, -4),
             ),
@@ -122,7 +122,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
           final allDocs = bookingSnapshot.data?.docs ?? [];
           final docs = allDocs.where((doc) {
             final data = doc.data();
-            final status = String(data['status'] ?? '').toUpperCase();
+            final status = (data['status'] ?? '').toString().toUpperCase();
             final assigned = data['partnerId'] == uid;
             final declined = (data['declinedBy'] is List) &&
                 (data['declinedBy'] as List).contains(uid);
@@ -140,7 +140,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
                         Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: AppColors.navy.withOpacity(0.08),
+                            color: AppColors.navy.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(Icons.local_taxi_rounded, color: AppColors.navy, size: 20),
@@ -259,7 +259,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
     final color = online ? AppColors.green : AppColors.red;
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: color.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 6))]),
+      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(20), boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 6))]),
       child: Row(
         children: [
           CircleAvatar(radius: 26, backgroundColor: Colors.white, child: Icon(Icons.person_pin_circle_outlined, color: color, size: 28)),
@@ -275,7 +275,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
               ? const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
               : Switch.adaptive(
                   value: online,
-                  activeColor: Colors.white,
+                  activeThumbColor: Colors.white,
                   activeTrackColor: Colors.white30,
                   inactiveThumbColor: Colors.white,
                   inactiveTrackColor: Colors.black26,
@@ -289,7 +289,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
   Widget premiumEntryCard() {
     final requests = AppData.premiumBookings.where((booking) => booking.status == 'REQUESTED').length;
     return Container(
-      decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.gold.withOpacity(0.4), width: 1.5)),
+      decoration: BoxDecoration(color: AppColors.navy, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.gold.withValues(alpha: 0.4), width: 1.5)),
       child: Material(color: Colors.transparent, child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PremiumBookingsScreen())),
@@ -314,7 +314,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
     return AppCard(
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: AppColors.navy.withOpacity(0.06), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: AppColors.navy, size: 22)),
+        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: AppColors.navy, size: 22)),
         const SizedBox(height: 12),
         Text(title, style: const TextStyle(color: AppColors.muted, fontSize: 11, fontWeight: FontWeight.w600)),
         const SizedBox(height: 2),
@@ -329,7 +329,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Expanded(child: Text(booking.customer, style: const TextStyle(color: AppColors.navy, fontSize: 16, fontWeight: FontWeight.w900))),
-          Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: AppColors.navy.withOpacity(0.08), borderRadius: BorderRadius.circular(6)), child: Text(booking.status.toUpperCase(), style: const TextStyle(color: AppColors.navy, fontSize: 10, fontWeight: FontWeight.bold))),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(6)), child: Text(booking.status.toUpperCase(), style: const TextStyle(color: AppColors.navy, fontSize: 10, fontWeight: FontWeight.bold))),
         ]),
         const SizedBox(height: 8),
         Text('Pickup: ${booking.pickup}', style: const TextStyle(fontSize: 12)),
