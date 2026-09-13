@@ -1,4 +1,3 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../services/msg91_otp_service.dart';
@@ -20,7 +19,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool isLoading = false;
   String? requestId;
   final _otpService = Msg91OtpService.instance;
-  final _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
 
   @override
   void initState() {
@@ -94,22 +92,6 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _ensureDriverAccount() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      throw StateError('Firebase session was not created. Please verify OTP again.');
-    }
-
-    await _functions.httpsCallable('ensureDriverAccount').call({
-      'phoneNumber': user.phoneNumber,
-      'name': _nameController.text.trim(),
-    });
-
-    // The callable sets the driver custom claim. Refresh the ID token so the
-    // same login session can immediately use driver-only Firestore/Storage rules.
-    await user.getIdToken(true);
-  }
-
   Future<void> _showOtpDialog(String phone) async {
     final otpController = TextEditingController();
     bool verifying = false;
@@ -133,15 +115,13 @@ class _LoginScreenState extends State<LoginScreen> {
             }
             setDialogState(() => verifying = true);
             try {
+              // OTP service signs in with Firebase Phone Auth and bootstraps
+              // the driver account exactly once.
               await _otpService.verifyOtp(
                 requestId: id,
                 otp: otp,
                 phoneNumber: phone,
               );
-
-              // Create/sync the partner profile and grant the driver role before
-              // opening Home. This makes all driver-only buttons actually work.
-              await _ensureDriverAccount();
 
               if (!mounted) return;
               Navigator.of(dialogContext).pop();
