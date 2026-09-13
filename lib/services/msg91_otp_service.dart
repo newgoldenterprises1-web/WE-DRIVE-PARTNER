@@ -37,9 +37,31 @@ class Msg91OtpService {
     }
 
     try {
+      // The MSG91 Flutter SDK requires Mobile Integration to be enabled on the
+      // widget. Fetching the widget process here gives the SDK a chance to load
+      // the widget configuration before the first Send OTP request.
+      try {
+        final process = await OTPWidget.getWidgetProcess();
+        developer.log('MSG91 widget process loaded: ${process != null}', name: 'WE_DRIVE_OTP');
+      } catch (e, stackTrace) {
+        developer.log('MSG91 widget process check failed: $e', name: 'WE_DRIVE_OTP', error: e, stackTrace: stackTrace);
+      }
+
       final response = await OTPWidget.sendOTP({'identifier': identifier});
+      developer.log('MSG91 Send OTP raw response: $response', name: 'WE_DRIVE_OTP');
+
+      if (response == null) {
+        throw StateError(
+          'MSG91 returned no response. Check that Mobile Integration is enabled for SecureOTPWidget7VF0 and that the active Widget Auth Token belongs to this widget.',
+        );
+      }
+
       final result = _asMap(response);
-      developer.log('MSG91 Send OTP response received: $result', name: 'WE_DRIVE_OTP');
+      if (result.isEmpty) {
+        throw StateError(
+          'MSG91 returned an empty response. Check Mobile Integration and the active Widget Auth Token in MSG91.',
+        );
+      }
       return result;
     } catch (e, stackTrace) {
       developer.log('MSG91 Send OTP failed: $e', name: 'WE_DRIVE_OTP', error: e, stackTrace: stackTrace);
@@ -92,6 +114,7 @@ class Msg91OtpService {
         'reqId': requestId,
         'retryChannel': 12,
       });
+      if (response == null) throw StateError('MSG91 returned no response for WhatsApp retry.');
       return _asMap(response);
     } catch (e, stackTrace) {
       developer.log('MSG91 WhatsApp retry failed: $e', name: 'WE_DRIVE_OTP', error: e, stackTrace: stackTrace);
@@ -106,6 +129,7 @@ class Msg91OtpService {
         'reqId': requestId,
         'retryChannel': 11,
       });
+      if (response == null) throw StateError('MSG91 returned no response for SMS retry.');
       return _asMap(response);
     } catch (e, stackTrace) {
       developer.log('MSG91 SMS retry failed: $e', name: 'WE_DRIVE_OTP', error: e, stackTrace: stackTrace);
