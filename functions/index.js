@@ -31,6 +31,38 @@ function normalizePhone(phoneNumber) {
   return `+${digits}`;
 }
 
+// Called immediately after Firebase Phone Auth succeeds in the partner app.
+// This makes the phone-authenticated account a driver and creates its server
+// profile before the app starts using driver-only Firestore/Storage paths.
+exports.ensureDriverAccount = onCall(
+  { region: 'asia-south1' },
+  async (request) => {
+    const uid = requireAuth(request);
+    const user = await admin.auth().getUser(uid);
+    const requestedName = String(request.data?.name || '').trim();
+    const phone = user.phoneNumber || normalizePhone(request.data?.phoneNumber);
+    const name = requestedName || user.displayName || 'WE DRIVE Partner';
+
+    await admin.auth().setCustomUserClaims(uid, { role: 'driver' });
+
+    await db.collection('partners').doc(uid).set({
+      uid,
+      role: 'driver',
+      phoneNumber: phone,
+      name,
+      fullName: name,
+      online: false,
+      onboardingStatus: 'ACTIVE',
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { ok: true, uid, role: 'driver', phoneNumber: phone };
+  },
+);
+
+// Legacy MSG91 bridge retained for backward compatibility with any older
+// client. The active partner app no longer uses these functions for OTP.
 async function verifyWithMsg91(accessToken) {
   if (!accessToken || typeof accessToken !== 'string') {
     throw new HttpsError('unauthenticated', 'MSG91 verification token is missing.');
@@ -172,6 +204,12 @@ exports.declineBooking = onCall(
     const snap = await ref.get();
     if (!snap.exists) throw new HttpsError('not-found', 'Booking not found.');
 
+    const data = snap.data() || {};
+    const status = String(data.status || '').toUpperCase();
+    if (!['REQUESTED', 'SEARCHING'].includes(status)) {
+      throw new HttpsError('failed-precondition', 'This booking is no longer available.');
+    }
+
     await ref.set({
       declinedBy: admin.firestore.FieldValue.arrayUnion(uid),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -185,25 +223,54 @@ exports.declineBooking = onCall(
 exports.onBookingWritten = onDocumentWritten(
   { document: 'bookings/{bookingId}', region: 'asia-south1' },
   async (event) => {
+    const before = event.data?.before?.data() || null;
     const after = event.data?.after?.data();
     if (!after) return;
-    if (String(after.status || '').toUpperCase() !== 'COMPLETED') return;
 
+    const bookingId = event.params.bookingId;
     const partnerId = after.partnerId;
     if (!partnerId) return;
 
-    const fare = Number(after.fare || 0);
-    const share = Number(after.partnerSharePercent ?? 85);
-    const earnings = Math.max(0, Math.round(fare * share / 100));
-    const bookingId = event.params.bookingId;
+    const beforeStatus = String(before?.status || '').toUpperCase();
+    const afterStatus = String(after.status || '').toUpperCase();
 
-    await db.collection('partners').doc(partnerId).collection('earnings').doc(bookingId).set({
-      bookingId,
-      fare,
-      partnerSharePercent: share,
-      earnings,
-      completedAt: after.completedAt || admin.firestore.FieldValue.serverTimestamp(),
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
+    if (afterStatus === 'ACCEPTED' && beforeStatus !== 'ACCEPTED') {
+      await db.collection('notifications').add({
+        userId: partnerId,
+        type: 'booking',
+        title: 'Booking accepted',
+        message: `Booking ${bookingId} has been assigned to you.`,
+        bookingId,
+        read: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+
+    if (afterStatus === 'COMPLETED') {
+      const fare = Number(after.fare || 0);
+      const share = Number(after.partnerSharePercent ?? 85);
+      const earnings = Math.max(0, Math.round(fare * share / 100));
+
+      await db.collection('partners').doc(partnerId).collection('earnings').doc(bookingId).set({
+        bookingId,
+        fare,
+        partnerSharePercent: share,
+        earnings,
+        completedAt: after.completedAt || admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      if (beforeStatus !== 'COMPLETED') {
+        await db.collection('notifications').add({
+          userId: partnerId,
+          type: 'earning',
+          title: 'Trip completed',
+          message: `₹${earnings} has been added to your earnings ledger.`,
+          bookingId,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    }
   },
 );
