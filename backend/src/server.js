@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ override: true });
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -225,4 +225,5 @@ function startBookingEarningsListener() {
 app.use((error, _req, res, _next) => { console.error(error); res.status(Number(error?.status) || 500).json({ error: error?.message || 'Internal server error.' }); });
 
 const port = Number(process.env.PORT || 8080);
-app.listen(port, () => { console.log(`WE DRIVE backend listening on ${port}`); startBookingEarningsListener(); });
+const host = process.env.HOST || '0.0.0.0';
+app.listen(port, host, () => { console.log(`WE DRIVE backend listening on ${host}:${port}`); startBookingEarningsListener(); });
