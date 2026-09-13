@@ -3,10 +3,15 @@ service firebase.storage {
   match /b/{bucket}/o {
     function signedIn() { return request.auth != null; }
     function isDriver() { return signedIn() && request.auth.token.role == 'driver'; }
+    function ownsBooking(uid, bookingId) {
+      return isDriver()
+        && uid == request.auth.uid
+        && firestore.get(/databases/(default)/documents/bookings/$(bookingId)).data.partnerId == request.auth.uid;
+    }
 
-    match /inspections/{folder}/{fileName} {
-      allow read: if isDriver();
-      allow create, update: if isDriver()
+    match /inspections/{uid}/{bookingId}/{folder}/{fileName} {
+      allow read: if ownsBooking(uid, bookingId);
+      allow create, update: if ownsBooking(uid, bookingId)
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
       allow delete: if false;
