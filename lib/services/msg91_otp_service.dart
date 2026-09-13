@@ -1,5 +1,7 @@
-import 'package:cloud_functions/cloud_functions.dart';
+import 'dart:convert';
+
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
 import 'package:sendotp_flutter_sdk/sendotp_flutter_sdk.dart';
 
 class Msg91OtpService {
@@ -9,8 +11,9 @@ class Msg91OtpService {
 
   static const String widgetId = '36696d6a754f383834373433';
   static const String authToken = String.fromEnvironment('MSG91_AUTH_TOKEN');
+  static const String apiBaseUrl = String.fromEnvironment('WE_DRIVE_API_BASE_URL');
 
-  bool get isConfigured => authToken.isNotEmpty;
+  bool get isConfigured => authToken.isNotEmpty && apiBaseUrl.isNotEmpty;
 
   void initialize() {
     _ensureConfigured();
@@ -40,22 +43,24 @@ class Msg91OtpService {
       throw StateError('MSG91 verification succeeded but no access token was returned.');
     }
 
-    final callable = FirebaseFunctions.instance.httpsCallable(
-      'verifyDriverMsg91AccessToken',
-    );
-    final firebaseResponse = await callable.call({
-      'accessToken': accessToken,
-      'phoneNumber': phoneNumber,
-    });
-    final firebaseData = _asMap(firebaseResponse.data);
-    final customToken = firebaseData['customToken'];
+    final uri = Uri.parse('$apiBaseUrl/api/auth/driver/msg91');
+    final httpResponse = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'accessToken': accessToken,
+        'phoneNumber': phoneNumber,
+      }),
+    ).timeout(const Duration(seconds: 20));
 
+    final data = _decodeHttpResponse(httpResponse);
+    final customToken = data['customToken'];
     if (customToken is! String || customToken.isEmpty) {
       throw StateError('Authentication server did not return a Firebase custom token.');
     }
 
     await FirebaseAuth.instance.signInWithCustomToken(customToken);
-    return firebaseData;
+    return data;
   }
 
   Future<Map<String, dynamic>> retryViaWhatsApp(String requestId) async {
@@ -77,11 +82,27 @@ class Msg91OtpService {
   }
 
   void _ensureConfigured() {
-    if (!isConfigured) {
+    if (authToken.isEmpty || apiBaseUrl.isEmpty) {
       throw StateError(
-        'MSG91_AUTH_TOKEN is not configured. Build with --dart-define=MSG91_AUTH_TOKEN=YOUR_TOKEN',
+        'OTP backend is not configured. Build with --dart-define=MSG91_AUTH_TOKEN=YOUR_TOKEN '
+        '--dart-define=WE_DRIVE_API_BASE_URL=https://YOUR-BACKEND-URL',
       );
     }
+  }
+
+  Map<String, dynamic> _decodeHttpResponse(http.Response response) {
+    Map<String, dynamic> data = {};
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map) data = Map<String, dynamic>.from(decoded);
+    } catch (_) {
+      // Keep the generic HTTP error below.
+    }
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError(data['error']?.toString() ?? 'Authentication server error (${response.statusCode}).');
+    }
+    return data;
   }
 
   Map<String, dynamic> _asMap(dynamic value) {
