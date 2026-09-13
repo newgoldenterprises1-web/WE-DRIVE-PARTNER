@@ -1,3 +1,6 @@
 export 'profile_screen_v2.dart';
+import 'profile_screen_v2.dart';
 
-typedef ProfileScreen = ProfileScreenV2;
+class ProfileScreen extends ProfileScreenV2 {
+  const ProfileScreen({super.key});
+}
