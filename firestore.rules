@@ -13,19 +13,6 @@ service cloud.firestore {
       return signedIn() && request.auth.token.role == 'customer';
     }
 
-    function driverOwnsBooking() {
-      return isDriver() && resource.data.partnerId == request.auth.uid;
-    }
-
-    function validDriverTransition() {
-      return isDriver() && resource.data.partnerId == request.auth.uid && (
-        (resource.data.status == 'ACCEPTED' && request.resource.data.status == 'ARRIVING') ||
-        (resource.data.status == 'ARRIVING' && request.resource.data.status == 'ARRIVED') ||
-        (resource.data.status == 'ARRIVED' && request.resource.data.status == 'TRIP_STARTED') ||
-        (resource.data.status == 'TRIP_STARTED' && request.resource.data.status == 'COMPLETED')
-      );
-    }
-
     match /partners/{partnerId} {
       allow read: if signedIn() && (request.auth.uid == partnerId || isCustomer());
       allow create, update: if isDriver() && request.auth.uid == partnerId;
@@ -46,20 +33,22 @@ service cloud.firestore {
         (isCustomer() && resource.data.customerId == request.auth.uid)
       );
 
-      // Existing app screens use live collection queries. The client still filters
-      // to the current driver's assigned/requested rides before displaying them.
-      allow list: if signedIn();
+      // Only partner clients may enumerate the live booking queue. Individual
+      // customer reads remain restricted to the owning customer via get above.
+      allow list: if isDriver();
 
       allow create: if isCustomer() && request.resource.data.customerId == request.auth.uid;
 
-      allow update: if validDriverTransition()
-        && request.resource.data.partnerId == resource.data.partnerId
+      // Driver booking transitions are server-only through callable functions.
+      // Customers may update only their own cancellation metadata.
+      allow update: if isCustomer()
+        && resource.data.customerId == request.auth.uid
         && request.resource.data.customerId == resource.data.customerId
-        && request.resource.data.fare == resource.data.fare
-      || (
-        isCustomer() &&
-        resource.data.customerId == request.auth.uid
-      );
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'updatedAt',
+          'cancelledAt'
+        ]);
 
       allow delete: if false;
     }
