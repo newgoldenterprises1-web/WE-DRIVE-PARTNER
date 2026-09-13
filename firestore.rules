@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isDriver() { return signedIn() && request.auth.token.role == 'driver'; }
+    function isCustomer() { return signedIn() && request.auth.token.role == 'customer'; }
+
+    match /partners/{partnerId} {
+      allow read: if signedIn() && (request.auth.uid == partnerId || isCustomer());
+      allow create, update: if isDriver() && request.auth.uid == partnerId;
+      allow delete: if false;
+
+      match /earnings/{earningId} {
+        allow read: if isDriver() && request.auth.uid == partnerId;
+        allow write: if false;
+      }
+    }
+
+    match /bookings/{bookingId} {
+      // Booking feeds are read only by authenticated app users. State changes
+      // should be performed by the callable backend for atomic assignment.
+      allow read: if signedIn();
+      allow create: if isCustomer() || isDriver();
+      allow update: if signedIn() && (
+        (isDriver() && resource.data.partnerId == request.auth.uid) ||
+        (isCustomer() && resource.data.customerId == request.auth.uid)
+      );
+      allow delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /profiles/{userId} {
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+  }
+}
