@@ -39,7 +39,7 @@
             android:value="2" />
     </application>
 
-    <!-- Allow url_launcher to check browser/Google Maps HTTPS handlers on Android 11+. -->
+    <!-- Allow url_launcher to check external browser, Google Maps, phone and email handlers. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
@@ -53,6 +53,18 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="geo"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="google.navigation"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="mailto"/>
         </intent>
     </queries>
 </manifest>
