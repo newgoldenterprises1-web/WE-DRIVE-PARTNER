@@ -6,8 +6,9 @@ import 'package:geolocator/geolocator.dart';
 
 /// Production partner presence/location service.
 ///
-/// The UI can keep its existing design while this service persists online
-/// state and live coordinates through the secure Firebase callable backend.
+/// The UI stays unchanged. Location is pushed to Firebase immediately from
+/// the device's last known fix when available, then refreshed with a
+/// high-accuracy live stream.
 class PartnerPresenceService {
   PartnerPresenceService._();
   static final PartnerPresenceService instance = PartnerPresenceService._();
@@ -42,27 +43,54 @@ class PartnerPresenceService {
     if (_running) return;
     await _ensureLocationPermission();
 
+    // Do not wait for a fresh GPS fix before starting. Android can often
+    // provide a cached fix immediately, which makes the partner location
+    // available to Firebase much faster.
+    final lastKnown = await Geolocator.getLastKnownPosition();
+    if (lastKnown != null) {
+      await _sendPosition(lastKnown);
+    }
+
+    // Then request a fresh high-accuracy position. This corrects the cached
+    // location as soon as the device gets a newer GPS/Wi-Fi/cell fix.
+    try {
+      final current = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+        timeLimit: const Duration(seconds: 8),
+      );
+      await _sendPosition(current);
+    } catch (_) {
+      // A cached position may already have been sent. Keep the live stream
+      // running rather than blocking the partner from going online.
+    }
+
     const settings = LocationSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 25,
+      distanceFilter: 10,
     );
 
     _running = true;
     _positionSubscription = Geolocator.getPositionStream(
       locationSettings: settings,
     ).listen((position) async {
-      try {
-        await _functions.httpsCallable('updateDriverLocation').call({
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'accuracy': position.accuracy,
-          'heading': position.heading,
-          'speed': position.speed,
-        });
-      } catch (_) {
-        // A transient network failure must not crash the partner app.
-      }
+      await _sendPosition(position);
     });
+  }
+
+  Future<void> _sendPosition(Position position) async {
+    try {
+      await _functions.httpsCallable('updateDriverLocation').call({
+        'latitude': position.latitude,
+        'longitude': position.longitude,
+        'accuracy': position.accuracy,
+        'heading': position.heading,
+        'speed': position.speed,
+      });
+    } catch (_) {
+      // A transient network failure must not crash the partner app.
+    }
   }
 
   Future<void> stopLiveLocation() async {
