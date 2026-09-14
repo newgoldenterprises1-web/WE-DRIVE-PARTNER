@@ -17,8 +17,7 @@ function requireAuth(request) {
 function optionalString(value, max = 500) {
   if (value == null) return null;
   const text = String(value).trim();
-  if (!text) return null;
-  return text.slice(0, max);
+  return text ? text.slice(0, max) : null;
 }
 
 function optionalNumber(value) {
@@ -27,12 +26,34 @@ function optionalNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function safeList(value, maxItems = 10) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => optionalString(item, 80)).filter(Boolean).slice(0, maxItems);
+}
+
 function requireCustomer(request) {
   const uid = requireAuth(request);
   if (request.auth?.token?.role !== 'customer') {
     throw new HttpsError('permission-denied', 'Customer access is required.');
   }
   return uid;
+}
+
+function distanceKm(lat1, lng1, lat2, lng2) {
+  const toRad = (v) => (v * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function chauffeurLevel(score, trips) {
+  if (score >= 95 && trips >= 1000) return 'SIGNATURE';
+  if (score >= 92 && trips >= 500) return 'EXECUTIVE';
+  if (score >= 88 && trips >= 250) return 'ELITE';
+  if (score >= 82 && trips >= 100) return 'PROFESSIONAL';
+  return 'VERIFIED';
 }
 
 exports.ensureCustomerAccount = onCall(
@@ -77,6 +98,7 @@ exports.createCustomerBooking = onCall(
 
     const userSnap = await db.collection('users').doc(uid).get();
     const userData = userSnap.data() || {};
+    const preferences = input.requestPreferences || {};
     const bookingRef = db.collection('bookings').doc();
 
     const data = {
@@ -114,6 +136,27 @@ exports.createCustomerBooking = onCall(
       assignedVehicle: null,
       specialInstruction: optionalString(input.specialInstruction, 1000),
       serviceMode: optionalString(input.serviceMode, 80),
+      requestPreferences: {
+        communicationStyle: optionalString(preferences.communicationStyle, 40) || 'NORMAL',
+        privacyMode: preferences.privacyMode === true,
+        preferredChauffeurId: optionalString(preferences.preferredChauffeurId, 160),
+        luggageMode: optionalString(preferences.luggageMode, 40) || 'LIGHT',
+        pickupMode: optionalString(preferences.pickupMode, 50) || 'CUSTOM_PIN',
+        guestName: optionalString(preferences.guestName, 120),
+        guestPhone: optionalString(preferences.guestPhone, 30),
+        guestRelationship: optionalString(preferences.guestRelationship, 60),
+        trustedContactName: optionalString(preferences.trustedContactName, 120),
+        trustedContactPhone: optionalString(preferences.trustedContactPhone, 30),
+        eventType: optionalString(preferences.eventType, 80),
+        corporateAccountId: optionalString(preferences.corporateAccountId, 120),
+        conciergeMode: preferences.conciergeMode === true,
+        whiteGlove: preferences.whiteGlove === true,
+        preferredLanguages: safeList(preferences.preferredLanguages, 5),
+        multipleStops: Array.isArray(preferences.multipleStops) ? preferences.multipleStops.slice(0, 8) : [],
+        recurringBooking: preferences.recurringBooking == null ? null : preferences.recurringBooking,
+      },
+      signatureMatchRequested: true,
+      matchStatus: 'WAITING',
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
@@ -137,6 +180,38 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
 
     const partnerSnap = await db.collection('partners').doc(partnerId).get();
     const partner = partnerSnap.data() || {};
+    const prefs = after.requestPreferences || {};
+
+    const driverRating = Number(partner.rating || 5);
+    const experience = Number(partner.experienceYears ?? partner.experience ?? 0);
+    const trips = Number(partner.completedTrips ?? partner.totalTrips ?? partner.tripsCompleted ?? 0);
+    const punctuality = Number(partner.punctualityScore ?? partner.punctuality ?? 95);
+    const verified = partner.verified === true || partner.verificationStatus === 'VERIFIED';
+    const distance = Number.isFinite(Number(after.pickupLatitude)) && Number.isFinite(Number(after.pickupLongitude)) &&
+        Number.isFinite(Number(partner.latitude)) && Number.isFinite(Number(partner.longitude))
+      ? distanceKm(Number(after.pickupLatitude), Number(after.pickupLongitude), Number(partner.latitude), Number(partner.longitude))
+      : null;
+
+    let matchScore = Math.round(Math.min(100,
+      driverRating * 12 +
+      Math.min(15, experience * 2) +
+      Math.min(15, punctuality / 7) +
+      (verified ? 15 : 0) +
+      (distance == null ? 5 : Math.max(0, 18 - distance * 3)) +
+      (prefs.preferredChauffeurId === partnerId ? 15 : 0)
+    ));
+    matchScore = Math.max(55, Math.min(100, matchScore));
+
+    const badges = [];
+    if (verified) badges.push('VERIFIED');
+    if (driverRating >= 4.8) badges.push('TOP RATED');
+    if (punctuality >= 95) badges.push('PUNCTUAL');
+    if (trips >= 500) badges.push('EXPERIENCED');
+    if (prefs.preferredChauffeurId === partnerId) badges.push('PREFERRED');
+    if (prefs.whiteGlove === true) badges.push('WHITE GLOVE');
+
+    const score = Math.round((driverRating * 0.45 + punctuality * 0.35 + (verified ? 100 : 70) * 0.20));
+    const level = chauffeurLevel(score, trips);
     const existingVehicle = after.assignedVehicle;
     const partnerVehicle = {
       model: partner.vehicleModel || partner.vehicleType || null,
@@ -149,12 +224,27 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
       driverId: partnerId,
       driverName: partner.name || partner.fullName || 'WE DRIVE Chauffeur',
       driverPhone: partner.phoneNumber || null,
-      driverRating: Number(partner.rating || 5),
-      driverExperience: partner.experienceYears ?? partner.experience ?? null,
-      driverVerified: partner.verified === true || partner.verificationStatus === 'VERIFIED',
+      driverRating,
+      driverExperience: experience,
+      driverVerified: verified,
       assignedVehicle: existingVehicle || partnerVehicle,
       otp,
       bookingStatus: 'ACCEPTED',
+      matchStatus: 'MATCHED',
+      matchScore,
+      matchReasons: [
+        verified ? 'Verified identity' : 'Profile available',
+        `${driverRating.toFixed(1)} rating`,
+        `${punctuality}% punctuality`,
+        experience > 0 ? `${experience} yrs experience` : 'Professional chauffeur',
+        distance == null ? null : `${distance.toFixed(1)} km away`,
+      ].filter(Boolean),
+      chauffeurLevel: level,
+      chauffeurBadges: badges,
+      chauffeurPassportId: `WD-${partnerId.slice(0, 8).toUpperCase()}`,
+      reliabilityScore: score,
+      estimatedDistanceKm: distance,
+      signatureMatch: matchScore >= 90,
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
@@ -163,8 +253,8 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
       await db.collection('notifications').add({
         userId: customerId,
         type: 'booking',
-        title: 'Chauffeur assigned',
-        message: `${partner.name || 'Your chauffeur'} has accepted your WE DRIVE request.`,
+        title: 'Signature chauffeur matched',
+        message: `${partner.name || 'Your chauffeur'} matched your WE DRIVE preferences with a ${matchScore}% match.`,
         bookingId: event.params.bookingId,
         read: false,
         createdAt: FieldValue.serverTimestamp(),
