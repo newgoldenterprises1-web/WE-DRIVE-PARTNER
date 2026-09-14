@@ -1,18 +1,16 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
-const { initializeApp } = require('firebase-admin/app');
+const { getApps, initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
-initializeApp();
+if (!getApps().length) initializeApp();
 
 const auth = getAuth();
 const db = getFirestore();
 
 function requireAuth(request) {
-  if (!request.auth?.uid) {
-    throw new HttpsError('unauthenticated', 'Authentication is required.');
-  }
+  if (!request.auth?.uid) throw new HttpsError('unauthenticated', 'Authentication is required.');
   return request.auth.uid;
 }
 
@@ -51,24 +49,13 @@ exports.ensureCustomerAccount = onCall(
     const email = user.email || optionalString(request.data?.email, 200) || existing.email || null;
     const phone = user.phoneNumber || optionalString(request.data?.phone, 30) || existing.phone || null;
 
-    await auth.setCustomUserClaims(uid, {
-      ...existingClaims,
-      role: 'customer',
-    });
+    await auth.setCustomUserClaims(uid, { ...existingClaims, role: 'customer' });
 
-    const profile = {
-      uid,
-      role: 'customer',
-      name,
-      email,
-      phone,
-      updatedAt: FieldValue.serverTimestamp(),
-    };
+    const profile = { uid, role: 'customer', name, email, phone, updatedAt: FieldValue.serverTimestamp() };
     if (!snap.exists) profile.createdAt = FieldValue.serverTimestamp();
 
     await userRef.set(profile, { merge: true });
     await db.collection('profiles').doc(uid).set(profile, { merge: true });
-
     return { ok: true, uid, role: 'customer' };
   },
 );
@@ -86,9 +73,7 @@ exports.createCustomerBooking = onCall(
     }
 
     const fare = Math.max(0, Number(input.fare || 0));
-    if (!Number.isFinite(fare)) {
-      throw new HttpsError('invalid-argument', 'Invalid fare.');
-    }
+    if (!Number.isFinite(fare)) throw new HttpsError('invalid-argument', 'Invalid fare.');
 
     const userSnap = await db.collection('users').doc(uid).get();
     const userData = userSnap.data() || {};
@@ -160,21 +145,18 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
     };
 
     const otp = String(Math.floor(1000 + Math.random() * 9000));
-    await event.data.after.ref.set(
-      {
-        driverId: partnerId,
-        driverName: partner.name || partner.fullName || 'WE DRIVE Chauffeur',
-        driverPhone: partner.phoneNumber || null,
-        driverRating: Number(partner.rating || 5),
-        driverExperience: partner.experienceYears ?? partner.experience ?? null,
-        driverVerified: partner.verified === true || partner.verificationStatus === 'VERIFIED',
-        assignedVehicle: existingVehicle || partnerVehicle,
-        otp,
-        bookingStatus: 'ACCEPTED',
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
+    await event.data.after.ref.set({
+      driverId: partnerId,
+      driverName: partner.name || partner.fullName || 'WE DRIVE Chauffeur',
+      driverPhone: partner.phoneNumber || null,
+      driverRating: Number(partner.rating || 5),
+      driverExperience: partner.experienceYears ?? partner.experience ?? null,
+      driverVerified: partner.verified === true || partner.verificationStatus === 'VERIFIED',
+      assignedVehicle: existingVehicle || partnerVehicle,
+      otp,
+      bookingStatus: 'ACCEPTED',
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
 
     const customerId = String(after.customerId || '').trim();
     if (customerId) {
