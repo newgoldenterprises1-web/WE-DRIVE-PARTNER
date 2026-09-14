@@ -1,4 +1,5 @@
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest } = require('firebase-functions/v2/https');
+const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
@@ -15,14 +16,6 @@ function requireAuth(request) {
   return request.auth.uid;
 }
 
-function requireCustomer(request) {
-  const uid = requireAuth(request);
-  if (request.auth?.token?.role !== 'customer') {
-    throw new HttpsError('permission-denied', 'Customer access is required.');
-  }
-  return uid;
-}
-
 function optionalString(value, max = 500) {
   if (value == null) return null;
   const text = String(value).trim();
@@ -34,6 +27,14 @@ function optionalNumber(value) {
   if (value == null || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function requireCustomer(request) {
+  const uid = requireAuth(request);
+  if (request.auth?.token?.role !== 'customer') {
+    throw new HttpsError('permission-denied', 'Customer access is required.');
+  }
+  return uid;
 }
 
 exports.ensureCustomerAccount = onCall(
@@ -134,5 +135,58 @@ exports.createCustomerBooking = onCall(
 
     await bookingRef.set(data);
     return { ok: true, bookingId: bookingRef.id, status: 'REQUESTED' };
+  },
+);
+
+exports.enrichCustomerBookingOnAssign = onDocumentWritten(
+  { document: 'bookings/{bookingId}', region: 'asia-south1' },
+  async (event) => {
+    const before = event.data?.before?.data() || null;
+    const after = event.data?.after?.data();
+    if (!after) return;
+
+    const afterStatus = String(after.status || '').toUpperCase();
+    const beforeStatus = String(before?.status || '').toUpperCase();
+    const partnerId = String(after.partnerId || '').trim();
+    if (!partnerId || afterStatus !== 'ACCEPTED' || beforeStatus === 'ACCEPTED') return;
+
+    const partnerSnap = await db.collection('partners').doc(partnerId).get();
+    const partner = partnerSnap.data() || {};
+    const existingVehicle = after.assignedVehicle;
+    const partnerVehicle = {
+      model: partner.vehicleModel || partner.vehicleType || null,
+      color: partner.vehicleColor || null,
+      number: partner.vehicleNumber || partner.registrationNumber || null,
+    };
+
+    const otp = String(Math.floor(1000 + Math.random() * 9000));
+    await event.data.after.ref.set(
+      {
+        driverId: partnerId,
+        driverName: partner.name || partner.fullName || 'WE DRIVE Chauffeur',
+        driverPhone: partner.phoneNumber || null,
+        driverRating: Number(partner.rating || 5),
+        driverExperience: partner.experienceYears ?? partner.experience ?? null,
+        driverVerified: partner.verified === true || partner.verificationStatus === 'VERIFIED',
+        assignedVehicle: existingVehicle || partnerVehicle,
+        otp,
+        bookingStatus: 'ACCEPTED',
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    const customerId = String(after.customerId || '').trim();
+    if (customerId) {
+      await db.collection('notifications').add({
+        userId: customerId,
+        type: 'booking',
+        title: 'Chauffeur assigned',
+        message: `${partner.name || 'Your chauffeur'} has accepted your WE DRIVE request.`,
+        bookingId: event.params.bookingId,
+        read: false,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
   },
 );
