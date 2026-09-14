@@ -21,6 +21,11 @@ service cloud.firestore {
       }
     }
 
+    match /users/{userId} {
+      allow read, create, update: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
     match /payoutRequests/{payoutId} {
       allow read: if isDriver() && resource.data.partnerId == request.auth.uid;
       allow write: if false;
@@ -34,16 +39,24 @@ service cloud.firestore {
         )) ||
         (isCustomer() && resource.data.customerId == request.auth.uid)
       );
-      allow list: if isDriver();
-      allow create: if isCustomer() && request.resource.data.customerId == request.auth.uid;
+      allow list: if isDriver() || (isCustomer() && resource.data.customerId == request.auth.uid);
+
+      // Customer bookings are created by the trusted Cloud Function.
+      allow create: if false;
+
+      // Customer can only cancel their own booking. Driver/backend transitions use Admin SDK.
       allow update: if isCustomer()
         && resource.data.customerId == request.auth.uid
         && request.resource.data.customerId == resource.data.customerId
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status',
+          'bookingStatus',
           'updatedAt',
-          'cancelledAt'
-        ]);
+          'cancelledAt',
+          'cancelledBy',
+          'cancellationReason'
+        ])
+        && request.resource.data.status == 'CANCELLED';
       allow delete: if false;
     }
 
@@ -59,7 +72,8 @@ service cloud.firestore {
     }
 
     match /profiles/{userId} {
-      allow read, write: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn() && (request.auth.uid == userId || isCustomer());
+      allow write: if signedIn() && request.auth.uid == userId;
     }
   }
 }
