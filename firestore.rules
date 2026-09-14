@@ -1,17 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
-    }
-
-    function isDriver() {
-      return signedIn() && request.auth.token.role == 'driver';
-    }
-
-    function isCustomer() {
-      return signedIn() && request.auth.token.role == 'customer';
-    }
+    function signedIn() { return request.auth != null; }
+    function isDriver() { return signedIn() && request.auth.token.role == 'driver'; }
+    function isCustomer() { return signedIn() && request.auth.token.role == 'customer'; }
 
     match /partners/{partnerId} {
       allow read: if signedIn() && (request.auth.uid == partnerId || isCustomer());
@@ -22,6 +14,16 @@ service cloud.firestore {
         allow read: if isDriver() && request.auth.uid == partnerId;
         allow write: if false;
       }
+
+      match /withdrawals/{withdrawalId} {
+        allow read: if isDriver() && request.auth.uid == partnerId;
+        allow write: if false;
+      }
+    }
+
+    match /payoutRequests/{payoutId} {
+      allow read: if isDriver() && resource.data.partnerId == request.auth.uid;
+      allow write: if false;
     }
 
     match /bookings/{bookingId} {
@@ -32,15 +34,8 @@ service cloud.firestore {
         )) ||
         (isCustomer() && resource.data.customerId == request.auth.uid)
       );
-
-      // Only partner clients may enumerate the live booking queue. Individual
-      // customer reads remain restricted to the owning customer via get above.
       allow list: if isDriver();
-
       allow create: if isCustomer() && request.resource.data.customerId == request.auth.uid;
-
-      // Driver booking transitions are server-only through callable functions.
-      // Customers may update only their own cancellation metadata.
       allow update: if isCustomer()
         && resource.data.customerId == request.auth.uid
         && request.resource.data.customerId == resource.data.customerId
@@ -49,7 +44,6 @@ service cloud.firestore {
           'updatedAt',
           'cancelledAt'
         ]);
-
       allow delete: if false;
     }
 
