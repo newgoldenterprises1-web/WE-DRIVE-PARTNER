@@ -59,6 +59,8 @@ exports.ensureDriverAccount = onCall(
       name,
       fullName: name,
       onboardingStatus: existing.onboardingStatus || 'ACTIVE',
+      payoutFrequency: existing.payoutFrequency || 'WEEKLY',
+      walletAvailableBalance: Number(existing.walletAvailableBalance || 0),
       updatedAt: FieldValue.serverTimestamp(),
     };
 
@@ -319,6 +321,113 @@ exports.transitionBooking = onCall(
   },
 );
 
+exports.setPayoutFrequency = onCall(
+  { region: 'asia-south1' },
+  async (request) => {
+    const uid = requireDriver(request);
+    const frequency = String(request.data?.frequency || '').trim().toUpperCase();
+    if (!['DAILY', 'WEEKLY'].includes(frequency)) {
+      throw new HttpsError('invalid-argument', 'Choose Daily or Weekly payout frequency.');
+    }
+
+    await db.collection('partners').doc(uid).set(
+      {
+        payoutFrequency: frequency,
+        payoutFrequencyUpdatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+
+    return { ok: true, frequency };
+  },
+);
+
+exports.requestWithdrawal = onCall(
+  { region: 'asia-south1' },
+  async (request) => {
+    const uid = requireDriver(request);
+    const frequency = String(request.data?.frequency || '').trim().toUpperCase();
+    if (!['DAILY', 'WEEKLY'].includes(frequency)) {
+      throw new HttpsError('invalid-argument', 'Choose Daily or Weekly payout frequency.');
+    }
+
+    const partnerRef = db.collection('partners').doc(uid);
+    const partnerSnap = await partnerRef.get();
+    if (!partnerSnap.exists) {
+      throw new HttpsError('failed-precondition', 'Partner account is not initialized.');
+    }
+
+    const partner = partnerSnap.data() || {};
+    const bankAccount = String(partner.bankAccountNo || '').trim();
+    const ifsc = String(partner.ifscCode || '').trim();
+    const accountHolder = String(partner.accountHolder || '').trim();
+    if (!bankAccount || !ifsc || !accountHolder) {
+      throw new HttpsError('failed-precondition', 'Please add and save your bank payout details first.');
+    }
+
+    let available = Number(partner.walletAvailableBalance || 0);
+    if (!Number.isFinite(available) || available < 0) available = 0;
+
+    // Backfill the wallet balance once for older partner records that pre-date
+    // the payout ledger. Future earnings update this value atomically.
+    if (!Object.prototype.hasOwnProperty.call(partner, 'walletAvailableBalance')) {
+      const earningsSnap = await partnerRef.collection('earnings').get();
+      const withdrawalsSnap = await partnerRef.collection('withdrawals').get();
+      const earned = earningsSnap.docs.reduce((sum, doc) => sum + Math.max(0, Number(doc.data()?.earnings || 0)), 0);
+      const alreadyRequested = withdrawalsSnap.docs.reduce((sum, doc) => {
+        const status = String(doc.data()?.status || '').toUpperCase();
+        return ['REQUESTED', 'PROCESSING', 'PAID'].includes(status)
+          ? sum + Math.max(0, Number(doc.data()?.amount || 0))
+          : sum;
+      }, 0);
+      available = Math.max(0, earned - alreadyRequested);
+    }
+
+    if (available <= 0) {
+      throw new HttpsError('failed-precondition', 'No available earnings to withdraw.');
+    }
+
+    const amount = Math.round(available * 100) / 100;
+    const withdrawalRef = partnerRef.collection('withdrawals').doc();
+
+    await db.runTransaction(async (tx) => {
+      const freshPartner = await tx.get(partnerRef);
+      const fresh = freshPartner.data() || {};
+      let balance = Number(fresh.walletAvailableBalance);
+      if (!Number.isFinite(balance)) balance = amount;
+      if (balance < amount) {
+        throw new HttpsError('aborted', 'Your available balance changed. Please try again.');
+      }
+
+      tx.set(partnerRef, {
+        walletAvailableBalance: Math.round((balance - amount) * 100) / 100,
+        payoutFrequency: frequency,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      tx.set(withdrawalRef, {
+        withdrawalId: withdrawalRef.id,
+        amount,
+        frequency,
+        status: 'REQUESTED',
+        accountHolder,
+        bankAccountLast4: bankAccount.slice(-4),
+        ifsc,
+        requestedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+
+    return {
+      ok: true,
+      withdrawalId: withdrawalRef.id,
+      amount,
+      frequency,
+      status: 'REQUESTED',
+    };
+  },
+);
+
 exports.onBookingWritten = onDocumentWritten(
   { document: 'bookings/{bookingId}', region: 'asia-south1' },
   async (event) => {
@@ -358,6 +467,14 @@ exports.onBookingWritten = onDocumentWritten(
           earnings,
           completedAt: after.completedAt || FieldValue.serverTimestamp(),
           createdAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      await db.collection('partners').doc(partnerId).set(
+        {
+          walletAvailableBalance: FieldValue.increment(earnings),
+          updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
