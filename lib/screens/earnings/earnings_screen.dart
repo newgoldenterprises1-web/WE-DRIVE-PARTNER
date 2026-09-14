@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../services/payout_service.dart';
@@ -106,7 +107,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
       final result = await PayoutService.instance.withdraw();
       if (!mounted) return;
       final amount = result['amount'] ?? 0;
-      final status = String(result['status'] ?? 'queued').toUpperCase();
+      final status = (result['status'] ?? 'queued').toString().toUpperCase();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Withdrawal of ₹$amount submitted. Status: $status'),
@@ -141,7 +142,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
               stream: FirebaseFirestore.instance.collection('partners').doc(uid).snapshots(),
               builder: (context, partnerSnapshot) {
                 final partner = partnerSnapshot.data?.data() ?? {};
-                final serverFrequency = String(partner['payoutFrequency'] ?? 'weekly').toLowerCase();
+                final serverFrequency = (partner['payoutFrequency'] ?? 'weekly').toString().toLowerCase();
                 if (!payoutSaving && (serverFrequency == 'daily' || serverFrequency == 'weekly')) {
                   payoutFrequency = serverFrequency;
                 }
@@ -176,15 +177,22 @@ class _EarningsScreenState extends State<EarningsScreen> {
                       stream: FirebaseFirestore.instance
                           .collection('payoutRequests')
                           .where('partnerId', isEqualTo: uid)
-                          .orderBy('createdAt', descending: true)
                           .limit(100)
                           .snapshots(),
                       builder: (context, payoutSnapshot) {
-                        final payoutDocs = payoutSnapshot.data?.docs ?? [];
+                        final payoutDocs = [...(payoutSnapshot.data?.docs ?? [])];
+                        payoutDocs.sort((a, b) {
+                          final aDate = a.data()['createdAt'];
+                          final bDate = b.data()['createdAt'];
+                          final aMillis = aDate is Timestamp ? aDate.millisecondsSinceEpoch : 0;
+                          final bMillis = bDate is Timestamp ? bDate.millisecondsSinceEpoch : 0;
+                          return bMillis.compareTo(aMillis);
+                        });
+
                         double reserved = 0;
                         for (final doc in payoutDocs) {
                           final data = doc.data();
-                          final status = String(data['status'] ?? '').toUpperCase();
+                          final status = (data['status'] ?? '').toString().toUpperCase();
                           final value = data['amount'];
                           if (value is num && ['REQUESTED', 'QUEUED', 'PENDING', 'PROCESSING', 'PROCESSED'].contains(status)) {
                             reserved += value.toDouble();
@@ -287,7 +295,7 @@ class _EarningsScreenState extends State<EarningsScreen> {
                               ...payoutDocs.map((doc) {
                                 final data = doc.data();
                                 final amount = data['amount'] is num ? (data['amount'] as num).toStringAsFixed(0) : '0';
-                                final status = String(data['status'] ?? 'REQUESTED').toUpperCase();
+                                final status = (data['status'] ?? 'REQUESTED').toString().toUpperCase();
                                 final date = _dateLabel(data['createdAt'] as Timestamp?);
                                 return transaction('Withdrawal • $status', date, '₹$amount');
                               }),
