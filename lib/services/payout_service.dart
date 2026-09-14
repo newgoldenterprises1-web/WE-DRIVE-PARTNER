@@ -10,7 +10,8 @@ class PayoutService {
     final result = await _functions.httpsCallable('setPayoutPreference').call({
       'frequency': frequency.toLowerCase(),
     });
-    return String(result.data['frequency'] ?? frequency).toLowerCase();
+    final data = Map<String, dynamic>.from(result.data as Map);
+    return (data['frequency'] ?? frequency).toString().toLowerCase();
   }
 
   Future<Map<String, dynamic>> withdraw() async {
