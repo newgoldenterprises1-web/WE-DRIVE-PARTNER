@@ -37,12 +37,18 @@ service cloud.firestore {
           resource.data.partnerId == request.auth.uid ||
           resource.data.status in ['SEARCHING', 'REQUESTED']
         )) ||
-        (isCustomer() && resource.data.customerId == request.auth.uid)
+        (isCustomer() && resource.data.customerId == request.auth.uid) ||
+        (!isDriver() && !isCustomer() && resource.data.customerId == request.auth.uid)
       );
       allow list: if isDriver() || (isCustomer() && resource.data.customerId == request.auth.uid);
 
-      // Customer bookings are created by the trusted Cloud Function.
-      allow create: if false;
+      // A customer may create only their own initial booking.
+      // This is intentionally limited to the request/search states so a client
+      // cannot create an already-accepted/completed/cancelled booking.
+      // Driver/backend transitions remain protected by the update rules/Admin SDK.
+      allow create: if signedIn()
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.status in ['SEARCHING', 'REQUESTED'];
 
       // Customer can only cancel their own booking. Driver/backend transitions use Admin SDK.
       allow update: if isCustomer()
