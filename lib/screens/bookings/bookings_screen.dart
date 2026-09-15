@@ -30,17 +30,22 @@ class BookingsScreen extends StatelessWidget {
           final docs = snapshot.data?.docs ?? [];
           final liveBookings = docs.map((doc) {
             final data = doc.data();
+            final bookingDate = data['bookingDate']?.toString().trim();
+            final bookingTime = data['bookingTime']?.toString().trim();
+            final scheduledDate = data['scheduledDate']?.toString().trim();
+            final scheduledTime = data['scheduledTime']?.toString().trim();
+
             return Booking(
               id: doc.id,
               vehicle: data['vehicleType'] ?? 'Sedan',
-              customer: data['customerName'] ?? 'Passenger',
+              customer: data['customerName'] ?? data['userName'] ?? 'Passenger',
               status: data['status'] ?? 'SEARCHING',
-              date: 'Today',
-              time: 'Now',
+              date: (bookingDate != null && bookingDate.isNotEmpty) ? bookingDate : ((scheduledDate != null && scheduledDate.isNotEmpty) ? scheduledDate : 'Today'),
+              time: (bookingTime != null && bookingTime.isNotEmpty) ? bookingTime : ((scheduledTime != null && scheduledTime.isNotEmpty) ? scheduledTime : 'Now'),
               pickup: data['pickupLocation'] ?? 'Hyderabad',
               destination: data['dropLocation'] ?? 'Hyderabad',
               earnings: data['fare'] is num ? ((data['fare'] as num) * 0.85).toInt() : 0,
-              customerPhone: data['customerPhone']?.toString(),
+              customerPhone: (data['customerPhone'] ?? data['userPhone'])?.toString(),
             );
           }).where((b) {
             final doc = docs.firstWhere((d) => d.id == b.id);
@@ -66,6 +71,7 @@ class BookingsScreen extends StatelessWidget {
             itemBuilder: (context, index) {
               final booking = liveBookings[index];
               final isRequested = booking.status.toUpperCase() == 'REQUESTED';
+              final isScheduled = booking.date != 'Today' || booking.time != 'Now';
               return AppCard(
                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => BookingDetailScreen(booking: booking))),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -75,7 +81,11 @@ class BookingsScreen extends StatelessWidget {
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Text(booking.customer, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.navy)),
                       const SizedBox(height: 2),
-                      Text('${booking.date} • ${booking.time}', style: const TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w500)),
+                      Row(children: [
+                        Icon(isScheduled ? Icons.event_available_rounded : Icons.today_rounded, size: 14, color: isScheduled ? AppColors.gold : AppColors.muted),
+                        const SizedBox(width: 4),
+                        Expanded(child: Text('${booking.date} • ${booking.time}', style: TextStyle(color: isScheduled ? AppColors.navy : AppColors.muted, fontSize: 12, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                      ]),
                     ])),
                     Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: isRequested ? const Color(0xFFFFF2C9) : const Color(0xFFE7F7EE), borderRadius: BorderRadius.circular(6)), child: Text(booking.status.toUpperCase(), style: TextStyle(color: isRequested ? const Color(0xFF8D6900) : AppColors.green, fontSize: 10, fontWeight: FontWeight.w900))),
                   ]),
