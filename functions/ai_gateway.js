@@ -3,14 +3,14 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { getApps, initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { createBookingForAI, assignBookingForAI } = require('./ai_booking_service');
-const { createApproval, getApproval, consumeApproval } = require('./ai_approval');
+const { createApproval, getApproval, consumeApproval, normalizeExecutionMetadata } = require('./ai_approval');
 const { recordAudit } = require('./ai_audit');
 const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, completeIdempotentOperation, failIdempotentOperation } = require('./ai_idempotency');
 
 if (!getApps().length) initializeApp();
 const db = getFirestore();
 
-const ALLOWED_TOOLS = new Set(['get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'request_approval', 'get_approval']);
+const ALLOWED_TOOLS = new Set(['get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'request_approval', 'get_approval', 'execute_approved_action']);
 const READ_ONLY_TOOLS = new Set(['get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_approval']);
 const ARGUMENT_KEYS = {
   get_booking: ['booking_id'], get_customer: ['customer_id'], get_driver_status: ['driver_id'],
@@ -19,6 +19,7 @@ const ARGUMENT_KEYS = {
   assign_driver: ['job_id', 'driver_id'], send_notification: ['recipient_id', 'channel', 'message', 'job_id'],
   get_business_report: ['period_start', 'period_end', 'metrics'], get_system_health: [],
   request_approval: ['action', 'reason', 'metadata'], get_approval: ['approval_id'],
+  execute_approved_action: ['approval_id', 'action', 'metadata'],
 };
 function fail(status, message) { const error = new Error(message); error.status = status; throw error; }
 function text(value, name, max = 500) { if (typeof value !== 'string' || !value.trim()) fail(400, `${name} is required.`); return value.trim().slice(0, max); }
@@ -42,15 +43,38 @@ function validateArgs(tool, args) {
     case 'get_system_health': return {};
     case 'request_approval': return { action: text(args.action, 'action', 100), reason: text(args.reason, 'reason', 1000), metadata: args.metadata && typeof args.metadata === 'object' && !Array.isArray(args.metadata) ? args.metadata : {} };
     case 'get_approval': return { approvalId: text(args.approval_id, 'approval_id', 160) };
+    case 'execute_approved_action': return { approvalId: text(args.approval_id, 'approval_id', 160), action: text(args.action, 'action', 100), metadata: args.metadata && typeof args.metadata === 'object' && !Array.isArray(args.metadata) ? args.metadata : {} };
     default: fail(403, 'Tool is not allowed.');
   }
 }
 function authenticate(request) { const configured = process.env.WE_DRIVE_AI_GATEWAY_TOKEN; const header = request.get('authorization') || ''; const match = /^Bearer\s+(.+)$/i.exec(header.trim()); const supplied = match ? match[1].trim() : ''; if (!configured || !supplied) fail(401, 'AI gateway authentication failed.'); const expected = Buffer.from(configured); const actual = Buffer.from(supplied); if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) fail(401, 'AI gateway authentication failed.'); }
 function idempotencyKey(request) { const key = request.get('x-idempotency-key'); if (!key || key.length > 200) fail(400, 'X-Idempotency-Key is required for write operations.'); return key; }
 function actorId(request) { const actor = request.get('x-we-drive-ai-actor-id'); if (!actor || actor.length > 160) fail(400, 'X-WE-DRIVE-AI-Actor-ID is required.'); return actor.trim(); }
+
+async function executeApprovedAction(args, actor) {
+  const safeMetadata = normalizeExecutionMetadata(args.metadata);
+  if (safeMetadata.execution.tool !== args.action) {
+    fail(409, 'Approval action does not match execution tool.');
+  }
+  // Critical executors are deliberately explicit. No critical action is executable until
+  // its server-side executor is registered and independently reviewed.
+  const executors = Object.freeze({});
+  const executor = executors[args.action];
+  if (typeof executor !== 'function') {
+    const error = new Error(`No approved executor is registered for critical action: ${args.action}.`);
+    error.status = 501;
+    throw error;
+  }
+  // consumeApproval is the final authorization boundary: exact actor + action + arguments,
+  // approved state, TTL and one-time consumption are checked transactionally before execution.
+  await consumeApproval({ approvalId: args.approvalId, actorId: actor, action: args.action, metadata: safeMetadata });
+  return executor({ actorId: actor, arguments: safeMetadata.execution.arguments });
+}
+
 async function runTool(tool, args, actor) {
   if (tool === 'request_approval') return createApproval({ actorId: actor, action: args.action, reason: args.reason, metadata: args.metadata });
   if (tool === 'get_approval') return getApproval(args.approvalId);
+  if (tool === 'execute_approved_action') return executeApprovedAction(args, actor);
   if (tool === 'get_system_health') { await db.collection('bookings').limit(1).get(); return { ok: true, firestore: 'ok', region: 'asia-south1' }; }
   if (tool === 'get_booking') { const snap = await db.collection('bookings').doc(args.bookingId).get(); if (!snap.exists) fail(404, 'Booking not found.'); return { ok: true, booking: { id: snap.id, ...snap.data() } }; }
   if (tool === 'get_customer') { const [u, p] = await Promise.all([db.collection('users').doc(args.customerId).get(), db.collection('profiles').doc(args.customerId).get()]); if (!u.exists && !p.exists) fail(404, 'Customer not found.'); return { ok: true, customer: { id: args.customerId, ...(u.data() || {}), ...(p.data() || {}) } }; }
@@ -113,4 +137,4 @@ exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, respons
     response.status(status).json({ ok: false, error: error.message || 'Internal gateway error.', requestId });
   }
 });
-exports._test = { validateArgs, authenticate, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, consumeApproval };
+exports._test = { validateArgs, authenticate, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, consumeApproval, executeApprovedAction };
