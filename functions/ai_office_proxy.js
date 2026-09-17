@@ -45,7 +45,11 @@ function validateBody(body) {
 }
 
 async function verifyOfficeUser(request) {
-  return getAuth().verifyIdToken(bearerToken(request), true);
+  const decoded = await getAuth().verifyIdToken(bearerToken(request), true);
+  if (decoded.admin !== true && decoded.role !== 'admin' && decoded.role !== 'ADMIN') {
+    fail(403, 'AI Office access requires an administrator account.');
+  }
+  return decoded;
 }
 
 exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30 }, async (request, response) => {
