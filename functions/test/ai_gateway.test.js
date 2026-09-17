@@ -43,11 +43,11 @@ test('invalid tool arguments are rejected', () => {
   );
 });
 
-test('unsupported notification channels are rejected before execution', () => {
+test('notification channel is normalized during validation', () => {
   const args = validateArgs('send_notification', {
     recipient_id: 'user-1',
-    channel: 'email',
+    channel: 'PUSH',
     message: 'Test',
   });
-  assert.equal(args.channel, 'email');
+  assert.equal(args.channel, 'push');
 });
