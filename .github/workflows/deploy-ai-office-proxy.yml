@@ -63,6 +63,21 @@ jobs:
           test -n "$WE_DRIVE_AI_SERVICE_URL"
           test -n "$AI_OFFICE_ORIGIN"
 
+      - name: Prepare Firebase Functions runtime parameters
+        env:
+          AI_OFFICE_ORIGIN: ${{ vars.AI_OFFICE_ORIGIN }}
+          WE_DRIVE_AI_SERVICE_URL: ${{ vars.WE_DRIVE_AI_SERVICE_URL }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          printf '%s\n' \
+            "AI_OFFICE_ORIGIN=$AI_OFFICE_ORIGIN" \
+            "WE_DRIVE_AI_SERVICE_URL=$WE_DRIVE_AI_SERVICE_URL" \
+            > "functions/.env.$GCP_PROJECT_ID"
+
       - name: Deploy only AI Office proxy
         run: |
           firebase deploy --only functions:aiOfficeProxy --project "${{ vars.GCP_PROJECT_ID }}" --force
+
+      - name: Remove generated Firebase parameter file
+        if: always()
+        run: rm -f "functions/.env.${{ vars.GCP_PROJECT_ID }}"
