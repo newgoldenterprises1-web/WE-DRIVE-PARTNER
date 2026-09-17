@@ -20,35 +20,36 @@ test('read-only tools are classified correctly', () => {
 
 test('create_job validates required arguments', () => {
   const args = validateArgs('create_job', {
-    customer_id: 'customer-1',
-    service_date: '2026-09-20',
-    start_time: '18:00',
-    location: 'Hyderabad',
+    customer_id: 'customer-1', service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad',
   });
-
   assert.deepEqual(args, {
-    customerId: 'customer-1',
-    serviceDate: '2026-09-20',
-    startTime: '18:00',
-    location: 'Hyderabad',
-    durationMinutes: null,
-    notes: null,
+    customerId: 'customer-1', serviceDate: '2026-09-20', startTime: '18:00', location: 'Hyderabad', durationMinutes: null, notes: null,
   });
 });
 
-test('invalid tool arguments are rejected', () => {
+test('get_available_drivers accepts optional matching coordinates and service', () => {
+  const args = validateArgs('get_available_drivers', {
+    service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', duration_minutes: 120,
+    latitude: 17.385, longitude: 78.4867, required_service: 'standard',
+  });
+  assert.equal(args.latitude, 17.385);
+  assert.equal(args.longitude, 78.4867);
+  assert.equal(args.requiredService, 'standard');
+});
+
+test('invalid coordinates are rejected', () => {
   assert.throws(
-    () => validateArgs('get_booking', {}),
-    /booking_id is required/,
+    () => validateArgs('get_available_drivers', { service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', latitude: 91 }),
+    /latitude is out of range/,
   );
 });
 
+test('invalid tool arguments are rejected', () => {
+  assert.throws(() => validateArgs('get_booking', {}), /booking_id is required/);
+});
+
 test('notification channel is normalized during validation', () => {
-  const args = validateArgs('send_notification', {
-    recipient_id: 'user-1',
-    channel: 'PUSH',
-    message: 'Test',
-  });
+  const args = validateArgs('send_notification', { recipient_id: 'user-1', channel: 'PUSH', message: 'Test' });
   assert.equal(args.channel, 'push');
 });
 
