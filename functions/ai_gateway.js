@@ -3,8 +3,9 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { getApps, initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { createBookingForAI, assignBookingForAI } = require('./ai_booking_service');
-const { CRITICAL_ACTIONS, createApproval, getApproval } = require('./ai_approval');
+const { createApproval, getApproval } = require('./ai_approval');
 const { recordAudit } = require('./ai_audit');
+const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, completeIdempotentOperation, failIdempotentOperation } = require('./ai_idempotency');
 
 if (!getApps().length) initializeApp();
 const db = getFirestore();
@@ -47,8 +48,6 @@ function validateArgs(tool, args) {
 function authenticate(request) { const configured = process.env.WE_DRIVE_AI_GATEWAY_TOKEN; const header = request.get('authorization') || ''; const match = /^Bearer\s+(.+)$/i.exec(header.trim()); const supplied = match ? match[1].trim() : ''; if (!configured || !supplied) fail(401, 'AI gateway authentication failed.'); const expected = Buffer.from(configured); const actual = Buffer.from(supplied); if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) fail(401, 'AI gateway authentication failed.'); }
 function idempotencyKey(request) { const key = request.get('x-idempotency-key'); if (!key || key.length > 200) fail(400, 'X-Idempotency-Key is required for write operations.'); return key; }
 function actorId(request) { const actor = request.get('x-we-drive-ai-actor-id'); if (!actor || actor.length > 160) fail(400, 'X-WE-DRIVE-AI-Actor-ID is required.'); return actor.trim(); }
-function idempotencyDocId(tool, key, actor = 'system') { return crypto.createHash('sha256').update(`${actor}:${tool}:${key}`).digest('hex'); }
-function argumentsFingerprint(tool, args) { return crypto.createHash('sha256').update(JSON.stringify({ tool, args })).digest('hex'); }
 async function runTool(tool, args, actor) {
   if (tool === 'request_approval') return createApproval({ actorId: actor, action: args.action, reason: args.reason, metadata: args.metadata });
   if (tool === 'get_approval') return getApproval(args.approvalId);
@@ -63,6 +62,22 @@ async function runTool(tool, args, actor) {
   if (tool === 'get_business_report') { const snap = await db.collection('bookings').where('bookingDate', '>=', args.periodStart).where('bookingDate', '<=', args.periodEnd).limit(500).get(); const bookings = snap.docs.map((doc) => doc.data() || {}); const completed = bookings.filter((b) => String(b.status || '').toUpperCase() === 'COMPLETED').length; const cancelled = bookings.filter((b) => String(b.status || '').toUpperCase().includes('CANCEL')).length; const requested = bookings.length; const revenue = bookings.reduce((sum, b) => sum + Math.max(0, Number(b.fare || 0)), 0); return { ok: true, periodStart: args.periodStart, periodEnd: args.periodEnd, metrics: { bookings: requested, completed, cancelled, pending: Math.max(0, requested - completed - cancelled), grossFare: revenue } }; }
   fail(403, 'Tool is not allowed.');
 }
+async function executeWrite(tool, args, actor, key, requestId, response) {
+  const operation = await beginIdempotentOperation({ tool, key, actor, args });
+  if (operation.replay) {
+    response.status(200).json({ ...operation.response, replayed: true, requestId });
+    return true;
+  }
+  try {
+    const result = await runTool(tool, args, actor);
+    await completeIdempotentOperation(operation.ref, result);
+    response.status(200).json({ ...result, requestId });
+    return true;
+  } catch (error) {
+    await failIdempotentOperation(operation.ref, error).catch((persistError) => console.error('WE DRIVE AI idempotency failure persistence failed', { requestId, message: persistError.message }));
+    throw error;
+  }
+}
 exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, response) => {
   const requestId = request.get('x-we-drive-ai-request-id') || crypto.randomUUID();
   let auditTool = request.body?.tool || null;
@@ -70,7 +85,32 @@ exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, respons
   response.on('finish', () => {
     recordAudit({ requestId, actorId: auditActor, tool: auditTool, status: response.statusCode, outcome: response.statusCode >= 400 ? 'error' : 'success' }).catch((auditError) => console.error('WE DRIVE AI audit logging failed', { requestId, message: auditError.message }));
   });
-  try { authenticate(request); if (request.method !== 'POST') fail(405, 'POST is required.'); if (Number(request.get('content-length') || 0) > 1024 * 1024) fail(413, 'Request body is too large.'); const tool = request.body?.tool; auditTool = tool || null; if (!ALLOWED_TOOLS.has(tool)) fail(403, 'Tool is not allowed.'); const args = validateArgs(tool, request.body?.arguments || {}); const actor = READ_ONLY_TOOLS.has(tool) && tool === 'get_approval' ? actorId(request) : (!READ_ONLY_TOOLS.has(tool) ? actorId(request) : null); auditActor = actor; if (tool === 'get_approval') { const result = await runTool(tool, args, actor); response.status(200).json({ ...result, requestId }); return; } if (tool === 'request_approval') { const key = idempotencyKey(request); const idemRef = db.collection('aiIdempotency').doc(idempotencyDocId(tool, key, actor)); const fingerprint = argumentsFingerprint(tool, args); const idemSnap = await idemRef.get(); if (idemSnap.exists) { const stored = idemSnap.data() || {}; if (stored.fingerprint !== fingerprint) fail(409, 'Idempotency key was already used for a different request.'); response.status(200).json({ ...stored.response, replayed: true, requestId }); return; } const result = await runTool(tool, args, actor); await idemRef.create({ response: result, tool, actor, fingerprint, createdAt: FieldValue.serverTimestamp() }); response.status(200).json({ ...result, requestId }); return; } if (!READ_ONLY_TOOLS.has(tool)) { const key = idempotencyKey(request); const idemRef = db.collection('aiIdempotency').doc(idempotencyDocId(tool, key, actor)); const fingerprint = argumentsFingerprint(tool, args); const idemSnap = await idemRef.get(); if (idemSnap.exists) { const stored = idemSnap.data() || {}; if (stored.fingerprint !== fingerprint) fail(409, 'Idempotency key was already used for a different request.'); response.status(200).json({ ...stored.response, replayed: true, requestId }); return; } const result = await runTool(tool, args, actor); await idemRef.create({ response: result, tool, actor, fingerprint, createdAt: FieldValue.serverTimestamp() }); response.status(200).json({ ...result, requestId }); return; } const result = await runTool(tool, args, actor); response.status(200).json({ ...result, requestId }); }
-  catch (error) { const status = Number(error.status) || 500; console.error('WE DRIVE AI gateway error', { requestId, status, message: error.message }); response.status(status).json({ ok: false, error: error.message || 'Internal gateway error.', requestId }); }
+  try {
+    authenticate(request);
+    if (request.method !== 'POST') fail(405, 'POST is required.');
+    if (Number(request.get('content-length') || 0) > 1024 * 1024) fail(413, 'Request body is too large.');
+    const tool = request.body?.tool;
+    auditTool = tool || null;
+    if (!ALLOWED_TOOLS.has(tool)) fail(403, 'Tool is not allowed.');
+    const args = validateArgs(tool, request.body?.arguments || {});
+    const actor = READ_ONLY_TOOLS.has(tool) && tool === 'get_approval' ? actorId(request) : (!READ_ONLY_TOOLS.has(tool) ? actorId(request) : null);
+    auditActor = actor;
+    if (tool === 'get_approval') {
+      const result = await runTool(tool, args, actor);
+      response.status(200).json({ ...result, requestId });
+      return;
+    }
+    if (!READ_ONLY_TOOLS.has(tool)) {
+      const key = idempotencyKey(request);
+      await executeWrite(tool, args, actor, key, requestId, response);
+      return;
+    }
+    const result = await runTool(tool, args, actor);
+    response.status(200).json({ ...result, requestId });
+  } catch (error) {
+    const status = Number(error.status) || 500;
+    console.error('WE DRIVE AI gateway error', { requestId, status, message: error.message });
+    response.status(status).json({ ok: false, error: error.message || 'Internal gateway error.', requestId });
+  }
 });
 exports._test = { validateArgs, authenticate, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint };
