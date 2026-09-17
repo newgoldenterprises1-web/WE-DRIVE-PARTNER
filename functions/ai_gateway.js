@@ -49,13 +49,15 @@ function validateArgs(tool, args) {
 function authenticate(request) {
   const configured = process.env.WE_DRIVE_AI_GATEWAY_TOKEN;
   const header = request.get('authorization') || '';
-  const supplied = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+  const supplied = match ? match[1].trim() : '';
   if (!configured || !supplied) fail(401, 'AI gateway authentication failed.');
   const expected = Buffer.from(configured); const actual = Buffer.from(supplied);
   if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) fail(401, 'AI gateway authentication failed.');
 }
 function idempotencyKey(request) { const key = request.get('x-idempotency-key'); if (!key || key.length > 200) fail(400, 'X-Idempotency-Key is required for write operations.'); return key; }
-function idempotencyDocId(tool, key) { return crypto.createHash('sha256').update(`${tool}:${key}`).digest('hex'); }
+function actorId(request) { const actor = request.get('x-we-drive-ai-actor-id'); if (!actor || actor.length > 160) fail(400, 'X-WE-DRIVE-AI-Actor-ID is required.'); return actor.trim(); }
+function idempotencyDocId(tool, key, actor = 'system') { return crypto.createHash('sha256').update(`${actor}:${tool}:${key}`).digest('hex'); }
 function argumentsFingerprint(tool, args) { return crypto.createHash('sha256').update(JSON.stringify({ tool, args })).digest('hex'); }
 
 async function runTool(tool, args) {
@@ -69,66 +71,7 @@ async function runTool(tool, args) {
     if (!customerSnap.exists) fail(404, 'Customer not found.');
     const customer = customerSnap.data() || {};
     const ref = db.collection('bookings').doc();
-    await ref.create({
-      bookingId: ref.id,
-      customerId: args.customerId,
-      customerName: customer.name || 'WE DRIVE Customer',
-      customerPhone: customer.phone || null,
-      customerEmail: customer.email || null,
-      serviceType: 'Driver on Demand',
-      vehicleType: null,
-      transmission: null,
-      fuelType: null,
-      pickupLocation: args.location,
-      dropLocation: null,
-      pickupLatitude: null,
-      pickupLongitude: null,
-      dropLatitude: null,
-      dropLongitude: null,
-      bookingDate: args.serviceDate,
-      bookingTime: args.startTime,
-      selectedHours: args.durationMinutes == null ? null : args.durationMinutes / 60,
-      fare: 0,
-      currency: 'INR',
-      paymentMethod: 'Cash',
-      paymentStatus: 'pending',
-      status: 'REQUESTED',
-      bookingStatus: 'REQUESTED',
-      partnerId: null,
-      driverId: null,
-      driverName: null,
-      driverPhone: null,
-      driverRating: null,
-      driverExperience: null,
-      driverVerified: false,
-      assignedVehicle: null,
-      specialInstruction: args.notes,
-      serviceMode: null,
-      requestPreferences: {
-        communicationStyle: 'NORMAL',
-        privacyMode: false,
-        preferredChauffeurId: null,
-        luggageMode: 'LIGHT',
-        pickupMode: 'CUSTOM_PIN',
-        guestName: null,
-        guestPhone: null,
-        guestRelationship: null,
-        trustedContactName: null,
-        trustedContactPhone: null,
-        eventType: null,
-        corporateAccountId: null,
-        conciergeMode: false,
-        whiteGlove: false,
-        preferredLanguages: [],
-        multipleStops: [],
-        recurringBooking: null,
-      },
-      signatureMatchRequested: true,
-      matchStatus: 'WAITING',
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-      source: 'AI_GATEWAY',
-    });
+    await ref.create({ bookingId: ref.id, customerId: args.customerId, customerName: customer.name || 'WE DRIVE Customer', customerPhone: customer.phone || null, customerEmail: customer.email || null, serviceType: 'Driver on Demand', vehicleType: null, transmission: null, fuelType: null, pickupLocation: args.location, dropLocation: null, pickupLatitude: null, pickupLongitude: null, dropLatitude: null, dropLongitude: null, bookingDate: args.serviceDate, bookingTime: args.startTime, selectedHours: args.durationMinutes == null ? null : args.durationMinutes / 60, fare: 0, currency: 'INR', paymentMethod: 'Cash', paymentStatus: 'pending', status: 'REQUESTED', bookingStatus: 'REQUESTED', partnerId: null, driverId: null, driverName: null, driverPhone: null, driverRating: null, driverExperience: null, driverVerified: false, assignedVehicle: null, specialInstruction: args.notes, serviceMode: null, requestPreferences: { communicationStyle: 'NORMAL', privacyMode: false, preferredChauffeurId: null, luggageMode: 'LIGHT', pickupMode: 'CUSTOM_PIN', guestName: null, guestPhone: null, guestRelationship: null, trustedContactName: null, trustedContactPhone: null, eventType: null, corporateAccountId: null, conciergeMode: false, whiteGlove: false, preferredLanguages: [], multipleStops: [], recurringBooking: null }, signatureMatchRequested: true, matchStatus: 'WAITING', createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(), source: 'AI_GATEWAY' });
     return { ok: true, bookingId: ref.id, status: 'REQUESTED' };
   }
   if (tool === 'assign_driver') { const bookingRef = db.collection('bookings').doc(args.jobId); const driverRef = db.collection('partners').doc(args.driverId); await db.runTransaction(async (tx) => { const [bookingSnap, driverSnap] = await Promise.all([tx.get(bookingRef), tx.get(driverRef)]); if (!bookingSnap.exists) fail(404, 'Booking not found.'); if (!driverSnap.exists) fail(404, 'Driver not found.'); const booking = bookingSnap.data() || {}; const driver = driverSnap.data() || {}; if (!['REQUESTED', 'SEARCHING'].includes(String(booking.status || '').toUpperCase())) fail(409, 'Booking is not available for assignment.'); if (driver.online !== true) fail(409, 'Driver is not online.'); tx.set(bookingRef, { partnerId: args.driverId, driverId: args.driverId, status: 'ACCEPTED', bookingStatus: 'ACCEPTED', acceptedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true }); }); return { ok: true, bookingId: args.jobId, driverId: args.driverId, status: 'ACCEPTED' }; }
@@ -147,7 +90,8 @@ exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, respons
     const args = validateArgs(tool, request.body?.arguments || {});
     if (!READ_ONLY_TOOLS.has(tool)) {
       const key = idempotencyKey(request);
-      const idemRef = db.collection('aiIdempotency').doc(idempotencyDocId(tool, key));
+      const actor = actorId(request);
+      const idemRef = db.collection('aiIdempotency').doc(idempotencyDocId(tool, key, actor));
       const fingerprint = argumentsFingerprint(tool, args);
       const idemSnap = await idemRef.get();
       if (idemSnap.exists) {
@@ -157,7 +101,7 @@ exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, respons
         return;
       }
       const result = await runTool(tool, args);
-      await idemRef.create({ response: result, tool, fingerprint, createdAt: FieldValue.serverTimestamp() });
+      await idemRef.create({ response: result, tool, actor, fingerprint, createdAt: FieldValue.serverTimestamp() });
       response.status(200).json({ ...result, requestId });
       return;
     }
