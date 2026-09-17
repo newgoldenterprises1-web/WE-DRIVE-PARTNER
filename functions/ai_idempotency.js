@@ -24,7 +24,22 @@ async function beginIdempotentOperation({ tool, key, actor, args }) {
         throw error;
       }
       if (stored.state === 'COMPLETED') return { replay: true, response: stored.response };
-      const error = new Error('An identical operation is already in progress.');
+      if (stored.state === 'PROCESSING') {
+        const error = new Error('An identical operation is already in progress.');
+        error.status = 409;
+        throw error;
+      }
+      if (stored.state === 'FAILED') {
+        transaction.update(ref, {
+          state: 'PROCESSING',
+          retryCount: Number(stored.retryCount || 0) + 1,
+          lastError: stored.error || null,
+          error: FieldValue.delete(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return { replay: false, ref, retry: true };
+      }
+      const error = new Error('Invalid idempotency operation state.');
       error.status = 409;
       throw error;
     }
@@ -33,16 +48,17 @@ async function beginIdempotentOperation({ tool, key, actor, args }) {
       actor,
       fingerprint,
       state: 'PROCESSING',
+      retryCount: 0,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return { replay: false, ref };
+    return { replay: false, ref, retry: false };
   });
   return result;
 }
 
 async function completeIdempotentOperation(ref, response) {
-  await ref.update({ state: 'COMPLETED', response, updatedAt: FieldValue.serverTimestamp() });
+  await ref.update({ state: 'COMPLETED', response, error: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() });
 }
 
 async function failIdempotentOperation(ref, error) {
