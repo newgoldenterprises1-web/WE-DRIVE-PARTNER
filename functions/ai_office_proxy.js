@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getApps, initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
