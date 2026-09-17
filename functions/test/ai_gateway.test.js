@@ -3,8 +3,10 @@ const assert = require('node:assert/strict');
 
 process.env.WE_DRIVE_AI_GATEWAY_TOKEN = 'test-token';
 const gateway = require('../ai_gateway');
+const approval = require('../ai_approval');
 
 const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint } = gateway._test;
+const { normalizeExecutionMetadata, fingerprint } = approval;
 
 test('AI gateway exposes only the approved tool set', () => {
   assert.equal(ALLOWED_TOOLS.has('get_booking'), true);
@@ -67,9 +69,37 @@ test('notification channel is normalized during validation', () => {
 });
 
 test('request_approval validates the critical action payload', () => {
-  const args = validateArgs('request_approval', { action: 'production_deploy', reason: 'Release approved build' });
+  const args = validateArgs('request_approval', {
+    action: 'production_deploy',
+    reason: 'Release approved build',
+    metadata: {
+      execution: {
+        tool: 'production_deploy',
+        arguments: { environment: 'production', version: 'v1.2.3' },
+      },
+    },
+  });
   assert.equal(args.action, 'production_deploy');
-  assert.equal(args.metadata && typeof args.metadata, 'object');
+  assert.equal(args.metadata.execution.tool, 'production_deploy');
+});
+
+test('approval execution metadata requires an exact tool and arguments object', () => {
+  assert.throws(
+    () => normalizeExecutionMetadata({}),
+    /metadata.execution is required/,
+  );
+  assert.throws(
+    () => normalizeExecutionMetadata({ execution: { tool: 'production_deploy' } }),
+    /metadata.execution.arguments is required/,
+  );
+});
+
+test('approval fingerprint changes when action or execution arguments change', () => {
+  const base = { execution: { tool: 'production_deploy', arguments: { version: 'v1' } } };
+  assert.notEqual(fingerprint('production_deploy', base), fingerprint('production_deploy', {
+    execution: { tool: 'production_deploy', arguments: { version: 'v2' } },
+  }));
+  assert.notEqual(fingerprint('production_deploy', base), fingerprint('large_financial_action', base));
 });
 
 test('get_approval validates approval id', () => {
