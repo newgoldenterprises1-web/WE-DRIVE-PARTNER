@@ -53,12 +53,16 @@ jobs:
       - name: Setup Firebase CLI
         run: npm install --global firebase-tools
 
-      - name: Deploy only AI Office proxy
+      - name: Validate deployment configuration
         env:
           AI_OFFICE_ORIGIN: ${{ vars.AI_OFFICE_ORIGIN }}
           WE_DRIVE_AI_SERVICE_URL: ${{ vars.WE_DRIVE_AI_SERVICE_URL }}
-          WE_DRIVE_AI_API_TOKEN: ${{ secrets.WE_DRIVE_AI_API_TOKEN }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: |
+          test -n "$GCP_PROJECT_ID"
           test -n "$WE_DRIVE_AI_SERVICE_URL"
-          test -n "$WE_DRIVE_AI_API_TOKEN"
+          test -n "$AI_OFFICE_ORIGIN"
+
+      - name: Deploy only AI Office proxy
+        run: |
           firebase deploy --only functions:aiOfficeProxy --project "${{ vars.GCP_PROJECT_ID }}" --force
