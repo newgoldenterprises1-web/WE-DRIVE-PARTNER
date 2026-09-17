@@ -1,11 +1,15 @@
 const crypto = require('crypto');
 const { onRequest } = require('firebase-functions/v2/https');
+const { defineSecret, defineString } = require('firebase-functions/params');
 const { getApps, initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 
 if (!getApps().length) initializeApp();
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const AI_OFFICE_ORIGIN = defineString('AI_OFFICE_ORIGIN', { default: '' });
+const WE_DRIVE_AI_SERVICE_URL = defineString('WE_DRIVE_AI_SERVICE_URL', { default: '' });
+const WE_DRIVE_AI_API_TOKEN = defineSecret('WE_DRIVE_AI_API_TOKEN');
 
 function fail(status, message) {
   const error = new Error(message);
@@ -14,7 +18,7 @@ function fail(status, message) {
 }
 
 function applyCors(request, response) {
-  const configuredOrigin = String(process.env.AI_OFFICE_ORIGIN || '').trim();
+  const configuredOrigin = String(AI_OFFICE_ORIGIN.value() || '').trim();
   const origin = String(request.get('origin') || '').trim();
   if (configuredOrigin && origin && origin !== configuredOrigin) fail(403, 'AI Office origin is not allowed.');
   if (configuredOrigin) response.set('Access-Control-Allow-Origin', configuredOrigin);
@@ -31,8 +35,8 @@ function bearerToken(request) {
 }
 
 function serviceConfig() {
-  const baseUrl = String(process.env.WE_DRIVE_AI_SERVICE_URL || '').trim().replace(/\/$/, '');
-  const token = String(process.env.WE_DRIVE_AI_API_TOKEN || '').trim();
+  const baseUrl = String(WE_DRIVE_AI_SERVICE_URL.value() || '').trim().replace(/\/$/, '');
+  const token = String(WE_DRIVE_AI_API_TOKEN.value() || '').trim();
   if (!baseUrl || !token) fail(503, 'AI Office service is not configured.');
   return { baseUrl, token };
 }
@@ -52,7 +56,7 @@ async function verifyOfficeUser(request) {
   return decoded;
 }
 
-exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30 }, async (request, response) => {
+exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30, secrets: [WE_DRIVE_AI_API_TOKEN] }, async (request, response) => {
   const requestId = request.get('x-we-drive-ai-request-id') || crypto.randomUUID();
   try {
     applyCors(request, response);
