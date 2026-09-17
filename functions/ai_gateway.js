@@ -16,7 +16,7 @@ const READ_ONLY_TOOLS = new Set([
 ]);
 const ARGUMENT_KEYS = {
   get_booking: ['booking_id'], get_customer: ['customer_id'], get_driver_status: ['driver_id'],
-  get_available_drivers: ['service_date', 'start_time', 'location', 'duration_minutes'],
+  get_available_drivers: ['service_date', 'start_time', 'location', 'duration_minutes', 'latitude', 'longitude', 'required_service'],
   create_job: ['customer_id', 'service_date', 'start_time', 'location', 'duration_minutes', 'notes'],
   assign_driver: ['job_id', 'driver_id'], send_notification: ['recipient_id', 'channel', 'message', 'job_id'],
   get_business_report: ['period_start', 'period_end', 'metrics'], get_system_health: [],
@@ -26,6 +26,7 @@ function fail(status, message) { const error = new Error(message); error.status 
 function text(value, name, max = 500) { if (typeof value !== 'string' || !value.trim()) fail(400, `${name} is required.`); return value.trim().slice(0, max); }
 function optionalText(value, max = 500) { if (value == null) return null; if (typeof value !== 'string') fail(400, 'Invalid text value.'); const v = value.trim(); return v ? v.slice(0, max) : null; }
 function finiteNumber(value, name) { const number = Number(value); if (!Number.isFinite(number)) fail(400, `${name} must be a valid number.`); return number; }
+function optionalCoordinate(value, name, min, max) { if (value == null) return null; const number = finiteNumber(value, name); if (number < min || number > max) fail(400, `${name} is out of range.`); return number; }
 
 function validateArgs(tool, args) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) fail(400, 'arguments must be an object.');
@@ -36,7 +37,15 @@ function validateArgs(tool, args) {
     case 'get_booking': return { bookingId: text(args.booking_id, 'booking_id', 160) };
     case 'get_customer': return { customerId: text(args.customer_id, 'customer_id', 160) };
     case 'get_driver_status': return { driverId: text(args.driver_id, 'driver_id', 160) };
-    case 'get_available_drivers': return { serviceDate: text(args.service_date, 'service_date', 40), startTime: text(args.start_time, 'start_time', 40), location: text(args.location, 'location', 500), durationMinutes: args.duration_minutes == null ? null : finiteNumber(args.duration_minutes, 'duration_minutes') };
+    case 'get_available_drivers': return {
+      serviceDate: text(args.service_date, 'service_date', 40),
+      startTime: text(args.start_time, 'start_time', 40),
+      location: text(args.location, 'location', 500),
+      durationMinutes: args.duration_minutes == null ? null : finiteNumber(args.duration_minutes, 'duration_minutes'),
+      latitude: optionalCoordinate(args.latitude, 'latitude', -90, 90),
+      longitude: optionalCoordinate(args.longitude, 'longitude', -180, 180),
+      requiredService: optionalText(args.required_service, 80),
+    };
     case 'create_job': return { customerId: text(args.customer_id, 'customer_id', 160), serviceDate: text(args.service_date, 'service_date', 40), startTime: text(args.start_time, 'start_time', 40), location: text(args.location, 'location', 500), durationMinutes: args.duration_minutes == null ? null : finiteNumber(args.duration_minutes, 'duration_minutes'), notes: optionalText(args.notes, 1000) };
     case 'assign_driver': return { jobId: text(args.job_id, 'job_id', 160), driverId: text(args.driver_id, 'driver_id', 160) };
     case 'send_notification': return { recipientId: text(args.recipient_id, 'recipient_id', 160), channel: text(args.channel, 'channel', 40).toLowerCase(), message: text(args.message, 'message', 2000), jobId: optionalText(args.job_id, 160) };
@@ -65,7 +74,7 @@ async function runTool(tool, args) {
   if (tool === 'get_booking') { const snap = await db.collection('bookings').doc(args.bookingId).get(); if (!snap.exists) fail(404, 'Booking not found.'); return { ok: true, booking: { id: snap.id, ...snap.data() } }; }
   if (tool === 'get_customer') { const [u, p] = await Promise.all([db.collection('users').doc(args.customerId).get(), db.collection('profiles').doc(args.customerId).get()]); if (!u.exists && !p.exists) fail(404, 'Customer not found.'); return { ok: true, customer: { id: args.customerId, ...(u.data() || {}), ...(p.data() || {}) } }; }
   if (tool === 'get_driver_status') { const snap = await db.collection('partners').doc(args.driverId).get(); if (!snap.exists) fail(404, 'Driver not found.'); const d = snap.data() || {}; return { ok: true, driver: { id: snap.id, online: d.online === true, lastSeenAt: d.lastSeenAt || null, latitude: d.latitude ?? null, longitude: d.longitude ?? null } }; }
-  if (tool === 'get_available_drivers') { const snap = await db.collection('partners').where('online', '==', true).limit(50).get(); const drivers = snap.docs.map((doc) => { const d = doc.data() || {}; return { id: doc.id, name: d.name || d.fullName || 'WE DRIVE Chauffeur', phoneNumber: d.phoneNumber || null, rating: Number(d.rating || 0), latitude: d.latitude ?? null, longitude: d.longitude ?? null, verified: d.verified === true }; }); return { ok: true, serviceDate: args.serviceDate, startTime: args.startTime, durationMinutes: args.durationMinutes, location: args.location, drivers }; }
+  if (tool === 'get_available_drivers') { const snap = await db.collection('partners').where('online', '==', true).limit(50).get(); const drivers = snap.docs.map((doc) => { const d = doc.data() || {}; return { id: doc.id, name: d.name || d.fullName || 'WE DRIVE Chauffeur', phoneNumber: d.phoneNumber || null, rating: Number(d.rating || 0), latitude: d.latitude ?? null, longitude: d.longitude ?? null, verified: d.verified === true }; }); return { ok: true, serviceDate: args.serviceDate, startTime: args.startTime, durationMinutes: args.durationMinutes, location: args.location, requestedLatitude: args.latitude, requestedLongitude: args.longitude, requiredService: args.requiredService, drivers }; }
   if (tool === 'create_job') {
     const customerSnap = await db.collection('users').doc(args.customerId).get();
     if (!customerSnap.exists) fail(404, 'Customer not found.');
