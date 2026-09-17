@@ -9,13 +9,17 @@ const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argument
 test('AI gateway exposes only the approved tool set', () => {
   assert.equal(ALLOWED_TOOLS.has('get_booking'), true);
   assert.equal(ALLOWED_TOOLS.has('create_job'), true);
+  assert.equal(ALLOWED_TOOLS.has('request_approval'), true);
+  assert.equal(ALLOWED_TOOLS.has('get_approval'), true);
   assert.equal(ALLOWED_TOOLS.has('delete_everything'), false);
 });
 
 test('read-only tools are classified correctly', () => {
   assert.equal(READ_ONLY_TOOLS.has('get_booking'), true);
   assert.equal(READ_ONLY_TOOLS.has('get_system_health'), true);
+  assert.equal(READ_ONLY_TOOLS.has('get_approval'), true);
   assert.equal(READ_ONLY_TOOLS.has('create_job'), false);
+  assert.equal(READ_ONLY_TOOLS.has('request_approval'), false);
 });
 
 test('create_job validates required arguments', () => {
@@ -60,6 +64,17 @@ test('invalid tool arguments are rejected', () => {
 test('notification channel is normalized during validation', () => {
   const args = validateArgs('send_notification', { recipient_id: 'user-1', channel: 'PUSH', message: 'Test' });
   assert.equal(args.channel, 'push');
+});
+
+test('request_approval validates the critical action payload', () => {
+  const args = validateArgs('request_approval', { action: 'production_deploy', reason: 'Release approved build' });
+  assert.equal(args.action, 'production_deploy');
+  assert.equal(args.metadata && typeof args.metadata, 'object');
+});
+
+test('get_approval validates approval id', () => {
+  const args = validateArgs('get_approval', { approval_id: 'approval-1' });
+  assert.deepEqual(args, { approvalId: 'approval-1' });
 });
 
 test('idempotency document is scoped by tool', () => {
