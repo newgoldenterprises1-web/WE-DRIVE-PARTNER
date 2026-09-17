@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 process.env.WE_DRIVE_AI_GATEWAY_TOKEN = 'test-token';
 const gateway = require('../ai_gateway');
 
-const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS } = gateway._test;
+const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint } = gateway._test;
 
 test('AI gateway exposes only the approved tool set', () => {
   assert.equal(ALLOWED_TOOLS.has('get_booking'), true);
@@ -50,4 +50,15 @@ test('notification channel is normalized during validation', () => {
     message: 'Test',
   });
   assert.equal(args.channel, 'push');
+});
+
+test('idempotency document is scoped by tool', () => {
+  assert.notEqual(idempotencyDocId('create_job', 'same-key'), idempotencyDocId('assign_driver', 'same-key'));
+});
+
+test('idempotency fingerprint changes when arguments change', () => {
+  assert.notEqual(
+    argumentsFingerprint('create_job', { customerId: 'a', location: 'A' }),
+    argumentsFingerprint('create_job', { customerId: 'a', location: 'B' }),
+  );
 });
