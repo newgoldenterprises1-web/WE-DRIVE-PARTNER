@@ -1,5 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { initializeApp } = require('firebase-admin/app');
+
+// The production idempotency module uses Firestore. Initialize the Admin app
+// here so importing the module is safe in the isolated CI unit-test process.
+if (!process.env.FIREBASE_CONFIG) {
+  process.env.FIREBASE_CONFIG = JSON.stringify({ projectId: 'we-drive-ci-test' });
+}
+initializeApp();
 
 const { idempotencyDocId, argumentsFingerprint } = require('../ai_idempotency');
 
