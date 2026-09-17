@@ -1,7 +1,9 @@
 const crypto = require('crypto');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
-const db = getFirestore();
+function getDb() {
+  return getFirestore();
+}
 
 function idempotencyDocId(tool, key, actor) {
   return crypto.createHash('sha256').update(`${actor}:${tool}:${key}`).digest('hex');
@@ -12,6 +14,7 @@ function argumentsFingerprint(tool, args) {
 }
 
 async function beginIdempotentOperation({ tool, key, actor, args }) {
+  const db = getDb();
   const ref = db.collection('aiIdempotency').doc(idempotencyDocId(tool, key, actor));
   const fingerprint = argumentsFingerprint(tool, args);
   const result = await db.runTransaction(async (transaction) => {
