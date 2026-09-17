@@ -6,7 +6,8 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "echo 'No lint configured'"
+    "lint": "echo 'No lint configured'",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "firebase-admin": "^14.4.0",
