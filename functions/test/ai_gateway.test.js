@@ -27,6 +27,15 @@ test('create_job validates required arguments', () => {
   });
 });
 
+test('create_job rejects a non-positive duration', () => {
+  assert.throws(
+    () => validateArgs('create_job', {
+      customer_id: 'customer-1', service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', duration_minutes: 0,
+    }),
+    /duration_minutes must be greater than zero/,
+  );
+});
+
 test('get_available_drivers accepts optional matching coordinates and service', () => {
   const args = validateArgs('get_available_drivers', {
     service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', duration_minutes: 120,
