@@ -5,7 +5,7 @@ process.env.WE_DRIVE_AI_GATEWAY_TOKEN = 'test-token';
 const gateway = require('../ai_gateway');
 const approval = require('../ai_approval');
 
-const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint } = gateway._test;
+const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, executeApprovedAction } = gateway._test;
 const { normalizeExecutionMetadata, fingerprint } = approval;
 
 test('AI gateway exposes only the approved tool set', () => {
@@ -13,6 +13,7 @@ test('AI gateway exposes only the approved tool set', () => {
   assert.equal(ALLOWED_TOOLS.has('create_job'), true);
   assert.equal(ALLOWED_TOOLS.has('request_approval'), true);
   assert.equal(ALLOWED_TOOLS.has('get_approval'), true);
+  assert.equal(ALLOWED_TOOLS.has('execute_approved_action'), true);
   assert.equal(ALLOWED_TOOLS.has('delete_everything'), false);
 });
 
@@ -22,41 +23,27 @@ test('read-only tools are classified correctly', () => {
   assert.equal(READ_ONLY_TOOLS.has('get_approval'), true);
   assert.equal(READ_ONLY_TOOLS.has('create_job'), false);
   assert.equal(READ_ONLY_TOOLS.has('request_approval'), false);
+  assert.equal(READ_ONLY_TOOLS.has('execute_approved_action'), false);
 });
 
 test('create_job validates required arguments', () => {
-  const args = validateArgs('create_job', {
-    customer_id: 'customer-1', service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad',
-  });
-  assert.deepEqual(args, {
-    customerId: 'customer-1', serviceDate: '2026-09-20', startTime: '18:00', location: 'Hyderabad', durationMinutes: null, notes: null,
-  });
+  const args = validateArgs('create_job', { customer_id: 'customer-1', service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad' });
+  assert.deepEqual(args, { customerId: 'customer-1', serviceDate: '2026-09-20', startTime: '18:00', location: 'Hyderabad', durationMinutes: null, notes: null });
 });
 
 test('create_job rejects a non-positive duration', () => {
-  assert.throws(
-    () => validateArgs('create_job', {
-      customer_id: 'customer-1', service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', duration_minutes: 0,
-    }),
-    /duration_minutes must be greater than zero/,
-  );
+  assert.throws(() => validateArgs('create_job', { customer_id: 'customer-1', service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', duration_minutes: 0 }), /duration_minutes must be greater than zero/);
 });
 
 test('get_available_drivers accepts optional matching coordinates and service', () => {
-  const args = validateArgs('get_available_drivers', {
-    service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', duration_minutes: 120,
-    latitude: 17.385, longitude: 78.4867, required_service: 'standard',
-  });
+  const args = validateArgs('get_available_drivers', { service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', duration_minutes: 120, latitude: 17.385, longitude: 78.4867, required_service: 'standard' });
   assert.equal(args.latitude, 17.385);
   assert.equal(args.longitude, 78.4867);
   assert.equal(args.requiredService, 'standard');
 });
 
 test('invalid coordinates are rejected', () => {
-  assert.throws(
-    () => validateArgs('get_available_drivers', { service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', latitude: 91 }),
-    /latitude is out of range/,
-  );
+  assert.throws(() => validateArgs('get_available_drivers', { service_date: '2026-09-20', start_time: '18:00', location: 'Hyderabad', latitude: 91 }), /latitude is out of range/);
 });
 
 test('invalid tool arguments are rejected', () => {
@@ -69,36 +56,34 @@ test('notification channel is normalized during validation', () => {
 });
 
 test('request_approval validates the critical action payload', () => {
-  const args = validateArgs('request_approval', {
-    action: 'production_deploy',
-    reason: 'Release approved build',
-    metadata: {
-      execution: {
-        tool: 'production_deploy',
-        arguments: { environment: 'production', version: 'v1.2.3' },
-      },
-    },
-  });
+  const args = validateArgs('request_approval', { action: 'production_deploy', reason: 'Release approved build', metadata: { execution: { tool: 'production_deploy', arguments: { environment: 'production', version: 'v1.2.3' } } } });
   assert.equal(args.action, 'production_deploy');
   assert.equal(args.metadata.execution.tool, 'production_deploy');
 });
 
+test('execute_approved_action validates the exact execution manifest shape', () => {
+  const args = validateArgs('execute_approved_action', { approval_id: 'approval-1', action: 'production_deploy', metadata: { execution: { tool: 'production_deploy', arguments: { environment: 'production', version: 'v1.2.3' } } } });
+  assert.equal(args.approvalId, 'approval-1');
+  assert.equal(args.action, 'production_deploy');
+  assert.deepEqual(args.metadata.execution.arguments, { environment: 'production', version: 'v1.2.3' });
+});
+
+test('approved execution rejects a mismatched action and execution tool before approval consumption', async () => {
+  await assert.rejects(executeApprovedAction({ approvalId: 'approval-1', action: 'production_deploy', metadata: { execution: { tool: 'large_financial_action', arguments: { amount: 100 } } } }, 'ai-agent'), /Approval action does not match execution tool/);
+});
+
+test('approved execution does not provide an unregistered critical executor', async () => {
+  await assert.rejects(executeApprovedAction({ approvalId: 'approval-1', action: 'production_deploy', metadata: { execution: { tool: 'production_deploy', arguments: { environment: 'production', version: 'v1.2.3' } } } }, 'ai-agent'), /No approved executor is registered for critical action/);
+});
+
 test('approval execution metadata requires an exact tool and arguments object', () => {
-  assert.throws(
-    () => normalizeExecutionMetadata({}),
-    /metadata.execution is required/,
-  );
-  assert.throws(
-    () => normalizeExecutionMetadata({ execution: { tool: 'production_deploy' } }),
-    /metadata.execution.arguments is required/,
-  );
+  assert.throws(() => normalizeExecutionMetadata({}), /metadata.execution is required/);
+  assert.throws(() => normalizeExecutionMetadata({ execution: { tool: 'production_deploy' } }), /metadata.execution.arguments is required/);
 });
 
 test('approval fingerprint changes when action or execution arguments change', () => {
   const base = { execution: { tool: 'production_deploy', arguments: { version: 'v1' } } };
-  assert.notEqual(fingerprint('production_deploy', base), fingerprint('production_deploy', {
-    execution: { tool: 'production_deploy', arguments: { version: 'v2' } },
-  }));
+  assert.notEqual(fingerprint('production_deploy', base), fingerprint('production_deploy', { execution: { tool: 'production_deploy', arguments: { version: 'v2' } } }));
   assert.notEqual(fingerprint('production_deploy', base), fingerprint('large_financial_action', base));
 });
 
@@ -112,8 +97,5 @@ test('idempotency document is scoped by tool', () => {
 });
 
 test('idempotency fingerprint changes when arguments change', () => {
-  assert.notEqual(
-    argumentsFingerprint('create_job', { customerId: 'a', location: 'A' }),
-    argumentsFingerprint('create_job', { customerId: 'a', location: 'B' }),
-  );
+  assert.notEqual(argumentsFingerprint('create_job', { customerId: 'a', location: 'A' }), argumentsFingerprint('create_job', { customerId: 'a', location: 'B' }));
 });
