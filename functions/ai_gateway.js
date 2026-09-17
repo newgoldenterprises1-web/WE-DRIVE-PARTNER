@@ -3,7 +3,7 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { getApps, initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { createBookingForAI, assignBookingForAI } = require('./ai_booking_service');
-const { createApproval, getApproval } = require('./ai_approval');
+const { createApproval, getApproval, consumeApproval } = require('./ai_approval');
 const { recordAudit } = require('./ai_audit');
 const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, completeIdempotentOperation, failIdempotentOperation } = require('./ai_idempotency');
 
@@ -113,4 +113,4 @@ exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, respons
     response.status(status).json({ ok: false, error: error.message || 'Internal gateway error.', requestId });
   }
 });
-exports._test = { validateArgs, authenticate, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint };
+exports._test = { validateArgs, authenticate, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, consumeApproval };
