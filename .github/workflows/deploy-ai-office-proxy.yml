@@ -96,6 +96,12 @@ jobs:
           test "$STATUS" = "204"
           grep -qi "Access-Control-Allow-Origin: https://wedriveai.free.je" /tmp/ai-office-proxy-body || true
           echo "AI Office proxy deployed: $URI"
+      - name: Inspect recent AI Office proxy errors
+        if: always()
+        run: |
+          set -euo pipefail
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="aiofficeproxy"'             --project "$GCP_PROJECT_ID"             --limit=20             --format='value(timestamp,severity,textPayload)' || true
+
       - name: Remove generated Firebase parameter file
         if: always()
         run: if [ -n "${GCP_PROJECT_ID:-}" ]; then rm -f "functions/.env.${GCP_PROJECT_ID}"; fi
