@@ -50,7 +50,14 @@ function validateBody(body) {
 
 async function verifyOfficeUser(request) {
   const decoded = await getAuth().verifyIdToken(bearerToken(request), true);
-  if (decoded.admin !== true && decoded.role !== 'admin' && decoded.role !== 'ADMIN') {
+  const configuredEmails = String(AI_OFFICE_ADMIN_EMAILS.value() || '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  const email = String(decoded.email || '').trim().toLowerCase();
+  const claimAdmin = decoded.admin === true || decoded.role === 'admin' || decoded.role === 'ADMIN';
+  const allowlistedAdmin = email && configuredEmails.includes(email);
+  if (!claimAdmin && !allowlistedAdmin) {
     fail(403, 'AI Office access requires an administrator account.');
   }
   return decoded;
