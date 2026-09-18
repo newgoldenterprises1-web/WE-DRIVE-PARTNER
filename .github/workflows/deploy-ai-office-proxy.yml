@@ -54,7 +54,7 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Setup Firebase CLI
-        run: npm install --global firebase-tools
+        run: npm install --global firebase-tools@15.22.1
 
       - name: Validate deployment configuration
         env:
@@ -83,7 +83,7 @@ jobs:
 
       - name: Deploy only AI Office proxy
         run: |
-          firebase deploy --only functions:aiOfficeProxy --project "$GCP_PROJECT_ID" --force
+          firebase deploy --only functions:aiOfficeProxy --project "$GCP_PROJECT_ID" --force --non-interactive
 
       - name: Remove generated Firebase parameter file
         if: always()
