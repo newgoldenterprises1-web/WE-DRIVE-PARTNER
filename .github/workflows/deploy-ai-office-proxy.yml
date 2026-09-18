@@ -19,6 +19,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      GCP_PROJECT_ID: we-drive-4315a
     steps:
       - name: Validate deployment gate
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_deployment != 'DEPLOY' }}
