@@ -1,0 +1,83 @@
+name: Deploy AI Office Proxy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deployment:
+        description: Type DEPLOY to deploy the AI Office proxy to Firebase
+        required: true
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate deployment gate
+        if: ${{ inputs.confirm_deployment != 'DEPLOY' }}
+        run: |
+          echo "AI Office proxy deployment requires confirm_deployment=DEPLOY."
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Run backend tests
+        working-directory: functions
+        run: npm test
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Firebase CLI
+        run: npm install --global firebase-tools
+
+      - name: Validate deployment configuration
+        env:
+          AI_OFFICE_ORIGIN: https://wedriveai.free.je
+          WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          test -n "$GCP_PROJECT_ID"
+          test -n "$WE_DRIVE_AI_SERVICE_URL"
+          test -n "$AI_OFFICE_ORIGIN"
+
+      - name: Prepare Firebase Functions runtime parameters
+        env:
+          AI_OFFICE_ORIGIN: https://wedriveai.free.je
+          WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          printf '%s\n' \
+            "AI_OFFICE_ORIGIN=$AI_OFFICE_ORIGIN" \
+            "WE_DRIVE_AI_SERVICE_URL=$WE_DRIVE_AI_SERVICE_URL" \
+            > "functions/.env.$GCP_PROJECT_ID"
+
+      - name: Deploy only AI Office proxy
+        run: |
+          firebase deploy --only functions:aiOfficeProxy --project "${{ vars.GCP_PROJECT_ID }}" --force
+
+      - name: Remove generated Firebase parameter file
+        if: always()
+        run: rm -f "functions/.env.${{ vars.GCP_PROJECT_ID }}"
