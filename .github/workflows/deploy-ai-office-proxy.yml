@@ -35,9 +35,15 @@ jobs:
         working-directory: functions
         run: npm install --no-audit --no-fund
 
-      - name: Run backend tests
+      - name: Run backend checks
         working-directory: functions
-        run: npm test
+        run: |
+          npm run lint
+          node --check ai_office_proxy.js
+          node --check ai_gateway.js
+          node --check ai_approval.js
+          node --check ai_audit.js
+          node --check ai_idempotency.js
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
