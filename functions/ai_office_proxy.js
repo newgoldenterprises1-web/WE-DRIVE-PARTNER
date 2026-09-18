@@ -7,7 +7,7 @@ const { getAuth } = require('firebase-admin/auth');
 if (!getApps().length) initializeApp();
 
 const MAX_BODY_BYTES = 1024 * 1024;
-const AI_OFFICE_ORIGIN = defineString('AI_OFFICE_ORIGIN', { default: '' });
+const AI_OFFICE_ORIGIN = defineString('AI_OFFICE_ORIGIN', { default: 'https://wedriveai.free.je' });
 const WE_DRIVE_AI_SERVICE_URL = defineString('WE_DRIVE_AI_SERVICE_URL', { default: '' });
 const WE_DRIVE_AI_API_TOKEN = defineSecret('WE_DRIVE_AI_API_TOKEN');
 
