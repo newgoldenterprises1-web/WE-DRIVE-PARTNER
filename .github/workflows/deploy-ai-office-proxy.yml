@@ -73,6 +73,19 @@ jobs:
             --set-env-vars "AI_OFFICE_ORIGIN=https://wedriveai.free.je,AI_OFFICE_ADMIN_EMAILS=newgoldenterprises0@gmail.com,WE_DRIVE_AI_SERVICE_URL=https://we-drive-ai-staging-35696955893.asia-south1.run.app" \
             --set-secrets "WE_DRIVE_AI_API_TOKEN=WE_DRIVE_AI_API_TOKEN:latest"
 
+      - name: Verify AI backend upstream
+        env:
+          WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
+        run: |
+          set -euo pipefail
+          AI_TOKEN="$(gcloud secrets versions access latest --secret=WE_DRIVE_AI_API_TOKEN --project "$GCP_PROJECT_ID")"
+          test -n "$AI_TOKEN"
+          echo "::add-mask::$AI_TOKEN"
+          curl --fail --silent --show-error             -H "Authorization: Bearer $AI_TOKEN"             "$WE_DRIVE_AI_SERVICE_URL/health"
+          echo
+          RESPONSE="$(curl --fail --silent --show-error             -H "Authorization: Bearer $AI_TOKEN"             -H "Content-Type: application/json"             -d '{"actor_id":"ai-office-proxy-smoke-test","message":"hello"}'             "$WE_DRIVE_AI_SERVICE_URL/v1/agent")"
+          echo "$RESPONSE" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("agent"), "missing agent"; assert d.get("action"), "missing action"; print("AI backend upstream contract: OK")'
+
       - name: Verify AI Office proxy deployment
         run: |
           set -euo pipefail
