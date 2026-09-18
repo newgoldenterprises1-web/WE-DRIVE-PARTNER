@@ -71,7 +71,7 @@ jobs:
             --allow-unauthenticated \
             --service-account we-drive-ai-runtime@we-drive-4315a.iam.gserviceaccount.com \
             --timeout 30s \
-            --set-env-vars "AI_OFFICE_ORIGIN=https://wedriveai.free.je,AI_OFFICE_ADMIN_EMAILS=newgoldenterprises0@gmail.com,WE_DRIVE_AI_SERVICE_URL=https://we-drive-ai-staging-35696955893.asia-south1.run.app" \
+            --set-env-vars "AI_OFFICE_ORIGIN=https://wedriveai.free.je,https://we-drive-ai-office-xdfecmdfwq-el.a.run.app,AI_OFFICE_ADMIN_EMAILS=newgoldenterprises0@gmail.com,WE_DRIVE_AI_SERVICE_URL=https://we-drive-ai-staging-35696955893.asia-south1.run.app" \
             --set-secrets "WE_DRIVE_AI_API_TOKEN=WE_DRIVE_AI_API_TOKEN:latest"
 
       - name: Verify AI backend upstream
