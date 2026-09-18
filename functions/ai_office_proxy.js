@@ -54,7 +54,7 @@ function validateBody(body) {
 
 async function verifyOfficeUser(request) {
   const decoded = await getAuth().verifyIdToken(bearerToken(request), true);
-  const configuredEmails = String(AI_OFFICE_ADMIN_EMAILS.value() || '')
+  const configuredEmails = String(process.env.AI_OFFICE_ADMIN_EMAILS || AI_OFFICE_ADMIN_EMAILS.value() || '')
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
