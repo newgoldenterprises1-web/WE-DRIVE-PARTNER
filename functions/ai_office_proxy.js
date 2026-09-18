@@ -20,7 +20,7 @@ function fail(status, message) {
 
 function applyCors(request, response) {
   const configuredOrigins = String(AI_OFFICE_ORIGIN.value() || '')
-    .split(',')
+    .split(';')
     .map((value) => value.trim().replace(/\/$/, ''))
     .filter(Boolean);
   const origin = String(request.get('origin') || '').trim().replace(/\/$/, '');
