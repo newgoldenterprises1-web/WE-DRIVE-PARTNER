@@ -60,17 +60,21 @@ jobs:
         env:
           AI_OFFICE_ORIGIN: https://wedriveai.free.je
           WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: |
+          set -euo pipefail
+          GCP_PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
           test -n "$GCP_PROJECT_ID"
+          test "$GCP_PROJECT_ID" != "(unset)"
           test -n "$WE_DRIVE_AI_SERVICE_URL"
           test -n "$AI_OFFICE_ORIGIN"
+          echo "Using Google Cloud project: $GCP_PROJECT_ID"
+          echo "GCP_PROJECT_ID=$GCP_PROJECT_ID" >> "$GITHUB_ENV"
 
       - name: Prepare Firebase Functions runtime parameters
         env:
           AI_OFFICE_ORIGIN: https://wedriveai.free.je
           WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
-          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          GCP_PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
         run: |
           printf '%s\n' \
             "AI_OFFICE_ORIGIN=$AI_OFFICE_ORIGIN" \
@@ -79,8 +83,8 @@ jobs:
 
       - name: Deploy only AI Office proxy
         run: |
-          firebase deploy --only functions:aiOfficeProxy --project "${{ vars.GCP_PROJECT_ID }}" --force
+          firebase deploy --only functions:aiOfficeProxy --project "$GCP_PROJECT_ID" --force
 
       - name: Remove generated Firebase parameter file
         if: always()
-        run: rm -f "functions/.env.${{ vars.GCP_PROJECT_ID }}"
+        run: if [ -n "${GCP_PROJECT_ID:-}" ]; then rm -f "functions/.env.${GCP_PROJECT_ID}"; fi
