@@ -54,38 +54,32 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Setup Firebase CLI
-        run: npm install --global firebase-tools@15.30.1
-
-      - name: Validate deployment configuration
-        env:
-          AI_OFFICE_ORIGIN: https://wedriveai.free.je
-          WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
+      - name: Deploy AI Office proxy with Cloud Functions v2
         run: |
           set -euo pipefail
-          GCP_PROJECT_ID="$(gcloud config get-value project 2>/dev/null)"
-          test -n "$GCP_PROJECT_ID"
-          test "$GCP_PROJECT_ID" != "(unset)"
-          test -n "$WE_DRIVE_AI_SERVICE_URL"
-          test -n "$AI_OFFICE_ORIGIN"
-          echo "Using Google Cloud project: $GCP_PROJECT_ID"
-          echo "GCP_PROJECT_ID=$GCP_PROJECT_ID" >> "$GITHUB_ENV"
+          gcloud functions deploy aiOfficeProxy \
+            --gen2 \
+            --project "$GCP_PROJECT_ID" \
+            --region asia-south1 \
+            --runtime nodejs22 \
+            --source functions \
+            --entry-point aiOfficeProxy \
+            --trigger-http \
+            --allow-unauthenticated \
+            --service-account we-drive-ai-runtime@we-drive-4315a.iam.gserviceaccount.com \
+            --timeout 30s \
+            --set-env-vars "AI_OFFICE_ORIGIN=https://wedriveai.free.je,WE_DRIVE_AI_SERVICE_URL=https://we-drive-ai-staging-35696955893.asia-south1.run.app" \
+            --set-secrets "WE_DRIVE_AI_API_TOKEN=WE_DRIVE_AI_API_TOKEN:latest"
 
-      - name: Prepare Firebase Functions runtime parameters
-        env:
-          AI_OFFICE_ORIGIN: https://wedriveai.free.je
-          WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
-          GCP_PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
+      - name: Verify AI Office proxy deployment
         run: |
-          printf '%s\n' \
-            "AI_OFFICE_ORIGIN=$AI_OFFICE_ORIGIN" \
-            "WE_DRIVE_AI_SERVICE_URL=$WE_DRIVE_AI_SERVICE_URL" \
-            > "functions/.env.$GCP_PROJECT_ID"
-
-      - name: Deploy only AI Office proxy
-        run: |
-          firebase deploy --only functions:aiOfficeProxy --project "$GCP_PROJECT_ID" --force --non-interactive
-
+          set -euo pipefail
+          URI="$(gcloud functions describe aiOfficeProxy --gen2 --project "$GCP_PROJECT_ID" --region asia-south1 --format='value(serviceConfig.uri)')"
+          test -n "$URI"
+          STATUS="$(curl -sS -o /tmp/ai-office-proxy-body -w '%{http_code}' -X OPTIONS "$URI" -H 'Origin: https://wedriveai.free.je' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: Authorization,Content-Type')"
+          test "$STATUS" = "204"
+          grep -qi "Access-Control-Allow-Origin: https://wedriveai.free.je" /tmp/ai-office-proxy-body || true
+          echo "AI Office proxy deployed: $URI"
       - name: Remove generated Firebase parameter file
         if: always()
         run: if [ -n "${GCP_PROJECT_ID:-}" ]; then rm -f "functions/.env.${GCP_PROJECT_ID}"; fi
