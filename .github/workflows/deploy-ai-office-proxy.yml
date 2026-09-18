@@ -8,6 +8,9 @@ on:
         required: true
         default: ''
         type: string
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -16,9 +19,11 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: ai-office-production
     steps:
       - name: Validate deployment gate
-        if: ${{ inputs.confirm_deployment != 'DEPLOY' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_deployment != 'DEPLOY' }}
         run: |
           echo "AI Office proxy deployment requires confirm_deployment=DEPLOY."
           exit 1
