@@ -23,8 +23,10 @@ jobs:
           echo "AI Office proxy deployment requires confirm_deployment=DEPLOY."
           exit 1
 
-      - name: Checkout
+      - name: Checkout AI gateway source
         uses: actions/checkout@v4
+        with:
+          ref: phase2f-ai-gateway
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -35,15 +37,9 @@ jobs:
         working-directory: functions
         run: npm install --no-audit --no-fund
 
-      - name: Run backend checks
+      - name: Run backend tests
         working-directory: functions
-        run: |
-          npm run lint
-          node --check ai_office_proxy.js
-          node --check ai_gateway.js
-          node --check ai_approval.js
-          node --check ai_audit.js
-          node --check ai_idempotency.js
+        run: npm test
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
