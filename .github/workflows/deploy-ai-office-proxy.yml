@@ -55,8 +55,8 @@ jobs:
 
       - name: Validate deployment configuration
         env:
-          AI_OFFICE_ORIGIN: ${{ vars.AI_OFFICE_ORIGIN }}
-          WE_DRIVE_AI_SERVICE_URL: ${{ vars.WE_DRIVE_AI_SERVICE_URL }}
+          AI_OFFICE_ORIGIN: https://wedriveai.free.je
+          WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: |
           test -n "$GCP_PROJECT_ID"
@@ -65,8 +65,8 @@ jobs:
 
       - name: Prepare Firebase Functions runtime parameters
         env:
-          AI_OFFICE_ORIGIN: ${{ vars.AI_OFFICE_ORIGIN }}
-          WE_DRIVE_AI_SERVICE_URL: ${{ vars.WE_DRIVE_AI_SERVICE_URL }}
+          AI_OFFICE_ORIGIN: https://wedriveai.free.je
+          WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
           GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: |
           printf '%s\n' \
