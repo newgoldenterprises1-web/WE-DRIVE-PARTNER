@@ -19,8 +19,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: ai-office-production
     steps:
       - name: Validate deployment gate
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_deployment != 'DEPLOY' }}
