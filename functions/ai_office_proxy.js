@@ -19,10 +19,13 @@ function fail(status, message) {
 }
 
 function applyCors(request, response) {
-  const configuredOrigin = String(AI_OFFICE_ORIGIN.value() || '').trim();
-  const origin = String(request.get('origin') || '').trim();
-  if (configuredOrigin && origin && origin !== configuredOrigin) fail(403, 'AI Office origin is not allowed.');
-  if (configuredOrigin) response.set('Access-Control-Allow-Origin', configuredOrigin);
+  const configuredOrigins = String(AI_OFFICE_ORIGIN.value() || '')
+    .split(',')
+    .map((value) => value.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+  const origin = String(request.get('origin') || '').trim().replace(/\/$/, '');
+  if (configuredOrigins.length && origin && !configuredOrigins.includes(origin)) fail(403, 'AI Office origin is not allowed.');
+  if (origin && configuredOrigins.includes(origin)) response.set('Access-Control-Allow-Origin', origin);
   response.set('Vary', 'Origin');
   response.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   response.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
