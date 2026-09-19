@@ -75,7 +75,61 @@ async function runTool(tool, args, actor) {
   if (tool === 'request_approval') return createApproval({ actorId: actor, action: args.action, reason: args.reason, metadata: args.metadata });
   if (tool === 'get_approval') return getApproval(args.approvalId);
   if (tool === 'execute_approved_action') return executeApprovedAction(args, actor);
-  if (tool === 'get_system_health') { await db.collection('bookings').limit(1).get(); return { ok: true, firestore: 'ok', region: 'asia-south1' }; }
+  if (tool === 'get_system_health') {
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+
+    const [todayBookingsSnap, onlineDriversSnap] = await Promise.all([
+      db.collection('bookings').where('bookingDate', '==', today).limit(500).get(),
+      db.collection('partners').where('online', '==', true).limit(500).get(),
+    ]);
+
+    const bookings = todayBookingsSnap.docs.map((doc) => doc.data() || {});
+    const normalizedStatus = (value) => String(value || '').trim().toUpperCase();
+    const activeStatuses = new Set([
+      'ACCEPTED', 'ASSIGNED', 'DRIVER_ASSIGNED', 'EN_ROUTE',
+      'STARTED', 'IN_PROGRESS', 'ONGOING', 'ARRIVED',
+    ]);
+    const pendingStatuses = new Set([
+      'PENDING', 'REQUESTED', 'SEARCHING', 'UNASSIGNED',
+      'PENDING_ASSIGNMENT', 'AWAITING_DRIVER',
+    ]);
+    const cancelledStatuses = new Set(['CANCELLED', 'CANCELED']);
+    const completedStatuses = new Set(['COMPLETED', 'COMPLETE']);
+
+    let activeJobs = 0;
+    let pendingJobs = 0;
+    let completedJobs = 0;
+    let cancelledJobs = 0;
+
+    for (const booking of bookings) {
+      const status = normalizedStatus(booking.status);
+      if (activeStatuses.has(status)) activeJobs += 1;
+      else if (pendingStatuses.has(status)) pendingJobs += 1;
+      else if (completedStatuses.has(status)) completedJobs += 1;
+      else if (cancelledStatuses.has(status)) cancelledJobs += 1;
+    }
+
+    return {
+      ok: true,
+      firestore: 'ok',
+      region: 'asia-south1',
+      date: today,
+      summary: {
+        todaysBookings: bookings.length,
+        activeJobs,
+        driversOnline: onlineDriversSnap.size,
+        pendingJobs,
+        completedJobs,
+        cancelledJobs,
+        alerts: pendingJobs + cancelledJobs,
+      },
+    };
+  }
   if (tool === 'get_booking') { const snap = await db.collection('bookings').doc(args.bookingId).get(); if (!snap.exists) fail(404, 'Booking not found.'); return { ok: true, booking: { id: snap.id, ...snap.data() } }; }
   if (tool === 'get_customer') { const [u, p] = await Promise.all([db.collection('users').doc(args.customerId).get(), db.collection('profiles').doc(args.customerId).get()]); if (!u.exists && !p.exists) fail(404, 'Customer not found.'); return { ok: true, customer: { id: args.customerId, ...(u.data() || {}), ...(p.data() || {}) } }; }
   if (tool === 'get_driver_status') { const snap = await db.collection('partners').doc(args.driverId).get(); if (!snap.exists) fail(404, 'Driver not found.'); const d = snap.data() || {}; return { ok: true, driver: { id: snap.id, online: d.online === true, lastSeenAt: d.lastSeenAt || null, latitude: d.latitude ?? null, longitude: d.longitude ?? null } }; }
