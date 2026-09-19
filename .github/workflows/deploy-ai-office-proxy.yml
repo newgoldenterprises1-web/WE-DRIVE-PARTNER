@@ -1,5 +1,5 @@
 name: Deploy AI Office Proxy
-# redeploy latest authenticated proxy user-context + live operational summary fix
+# redeploy latest authenticated proxy user-context + live operational summary + upstream diagnostics fix
 # AI Office auth uses standard ID-token verification; no privileged revocation lookup is required.
 
 on:
