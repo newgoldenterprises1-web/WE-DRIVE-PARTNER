@@ -58,12 +58,6 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Grant minimum Firebase runtime permissions
-        run: |
-          set -euo pipefail
-          gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID"             --member="serviceAccount:$AI_RUNTIME_SERVICE_ACCOUNT"             --role="roles/firebaseauth.admin"             --quiet
-          gcloud projects add-iam-policy-binding "$GCP_PROJECT_ID"             --member="serviceAccount:$AI_RUNTIME_SERVICE_ACCOUNT"             --role="roles/datastore.user"             --quiet
-
       - name: Deploy AI Office proxy with Cloud Functions v2
         run: |
           set -euo pipefail
