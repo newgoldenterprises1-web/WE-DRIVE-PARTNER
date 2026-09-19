@@ -83,7 +83,14 @@ async function runTool(tool, args, actor) {
       day: '2-digit',
     }).format(new Date());
 
-    // Count bookings created today, including immediate jobs where bookingDate is null.\n    const dayStart = new Date(today + 'T00:00:00+05:30');\n    const [todayBookingsSnap, onlineDriversSnap] = await Promise.all([\n      db.collection('bookings').where('createdAt', '>=', Timestamp.fromDate(dayStart)).limit(500).get(),\n      db.collection('partners').where('online', '==', true).limit(500).get(),\n    ]);\n\n    const bookings = todayBookingsSnap.docs.map((doc) => doc.data() || {});
+    // Count bookings created today, including immediate jobs where bookingDate is null.
+    const dayStart = new Date(today + 'T00:00:00+05:30');
+    const [todayBookingsSnap, onlineDriversSnap] = await Promise.all([
+      db.collection('bookings').where('createdAt', '>=', Timestamp.fromDate(dayStart)).limit(500).get(),
+      db.collection('partners').where('online', '==', true).limit(500).get(),
+    ]);
+
+    const bookings = todayBookingsSnap.docs.map((doc) => doc.data() || {});
     const normalizedStatus = (value) => String(value || '').trim().toUpperCase();
     const activeStatuses = new Set([
       'ACCEPTED', 'ASSIGNED', 'DRIVER_ASSIGNED', 'EN_ROUTE',
