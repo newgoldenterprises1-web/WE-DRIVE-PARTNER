@@ -53,18 +53,18 @@ function validateBody(body) {
 }
 
 async function verifyOfficeUser(request) {
-  // Verify the Firebase ID token without the optional revocation lookup.\n  // This avoids requiring Firebase Auth user-read permissions for the proxy runtime.\n  const decoded = await getAuth().verifyIdToken(bearerToken(request));
+  const claims = await getAuth().verifyIdToken(bearerToken(request));
   const configuredEmails = String(process.env.AI_OFFICE_ADMIN_EMAILS || AI_OFFICE_ADMIN_EMAILS.value() || '')
     .split(',')
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
-  const email = String(decoded.email || '').trim().toLowerCase();
-  const claimAdmin = decoded.admin === true || decoded.role === 'admin' || decoded.role === 'ADMIN';
-  const allowlistedAdmin = email && configuredEmails.includes(email);
+  const email = String(claims.email || '').trim().toLowerCase();
+  const claimAdmin = claims.admin === true || claims.role === 'admin' || claims.role === 'ADMIN';
+  const allowlistedAdmin = Boolean(email && configuredEmails.includes(email));
   if (!claimAdmin && !allowlistedAdmin) {
     fail(403, 'AI Office access requires an administrator account.');
   }
-  return decoded;
+  return { uid: String(claims.uid || ''), email };
 }
 
 exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30, secrets: [WE_DRIVE_AI_API_TOKEN] }, async (request, response) => {
@@ -76,7 +76,7 @@ exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30, s
       return;
     }
 
-    const decoded = await verifyOfficeUser(request);
+    const officeUser = await verifyOfficeUser(request);
     const { baseUrl, token } = serviceConfig();
 
     if (request.method === 'GET') {
@@ -95,10 +95,10 @@ exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30, s
     validateBody(request.body);
 
     const payload = {
-      actor_id: decoded.uid,
+      actor_id: officeUser.uid,
       message: request.body.message.trim(),
       context: request.body.context || {},
-      session_id: request.body.session_id || `office:${decoded.uid}`,
+      session_id: request.body.session_id || `office:${officeUser.uid}`,
     };
 
     const upstream = await fetch(`${baseUrl}/v1/agent`, {
@@ -107,7 +107,7 @@ exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30, s
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
         'X-WE-DRIVE-AI-Office': 'true',
-        'X-WE-DRIVE-AI-Actor-ID': decoded.uid,
+        'X-WE-DRIVE-AI-Actor-ID': officeUser.uid,
         'X-WE-DRIVE-AI-Request-ID': requestId,
       },
       body: JSON.stringify(payload),
