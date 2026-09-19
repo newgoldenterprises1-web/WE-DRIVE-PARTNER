@@ -1,4 +1,5 @@
 name: Deploy AI Office Proxy
+# AI Office auth uses standard ID-token verification; no privileged revocation lookup is required.
 
 on:
   workflow_dispatch:
