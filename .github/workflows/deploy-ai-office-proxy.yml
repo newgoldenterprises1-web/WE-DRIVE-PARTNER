@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GCP_PROJECT_ID: we-drive-4315a
+      AI_OFFICE_ORIGINS: https://wedriveai.free.je;https://we-drive-ai-office-xdfecmdfwq-el.a.run.app
     steps:
       - name: Validate deployment gate
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.confirm_deployment != 'DEPLOY' }}
@@ -71,7 +72,7 @@ jobs:
             --allow-unauthenticated \
             --service-account we-drive-ai-runtime@we-drive-4315a.iam.gserviceaccount.com \
             --timeout 30s \
-            --set-env-vars "AI_OFFICE_ORIGIN=https://wedriveai.free.je,AI_OFFICE_ADMIN_EMAILS=newgoldenterprises0@gmail.com,WE_DRIVE_AI_SERVICE_URL=https://we-drive-ai-staging-35696955893.asia-south1.run.app" \
+            --set-env-vars "AI_OFFICE_ORIGIN=$AI_OFFICE_ORIGINS,AI_OFFICE_ADMIN_EMAILS=newgoldenterprises0@gmail.com,WE_DRIVE_AI_SERVICE_URL=https://we-drive-ai-staging-35696955893.asia-south1.run.app" \
             --set-secrets "WE_DRIVE_AI_API_TOKEN=WE_DRIVE_AI_API_TOKEN:latest"
 
       - name: Verify AI backend upstream
@@ -87,15 +88,20 @@ jobs:
           RESPONSE="$(curl --fail --silent --show-error             -H "Authorization: Bearer $AI_TOKEN"             -H "Content-Type: application/json"             -d '{"actor_id":"ai-office-proxy-smoke-test","message":"hello"}'             "$WE_DRIVE_AI_SERVICE_URL/v1/agent")"
           echo "$RESPONSE" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("agent"), "missing agent"; assert d.get("action"), "missing action"; print("AI backend upstream contract: OK")'
 
-      - name: Verify AI Office proxy deployment
+      - name: Verify AI Office proxy CORS
         run: |
           set -euo pipefail
           URI="$(gcloud functions describe aiOfficeProxy --gen2 --project "$GCP_PROJECT_ID" --region asia-south1 --format='value(serviceConfig.uri)')"
           test -n "$URI"
-          STATUS="$(curl -sS -o /tmp/ai-office-proxy-body -w '%{http_code}' -X OPTIONS "$URI" -H 'Origin: https://wedriveai.free.je' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: Authorization,Content-Type')"
-          test "$STATUS" = "204"
-          grep -qi "Access-Control-Allow-Origin: https://wedriveai.free.je" /tmp/ai-office-proxy-body || true
+
+          for ORIGIN in "https://wedriveai.free.je" "https://we-drive-ai-office-xdfecmdfwq-el.a.run.app"; do
+            STATUS="$(curl -sS -o /dev/null -w '%{http_code}' -X OPTIONS "$URI"               -H "Origin: $ORIGIN"               -H 'Access-Control-Request-Method: POST'               -H 'Access-Control-Request-Headers: Authorization,Content-Type')"
+            test "$STATUS" = "204"
+            echo "CORS preflight OK: $ORIGIN"
+          done
+
           echo "AI Office proxy deployed: $URI"
+
       - name: Inspect recent AI Office proxy errors
         if: always()
         run: |
