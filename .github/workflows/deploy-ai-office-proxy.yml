@@ -105,3 +105,5 @@ jobs:
       - name: Remove generated Firebase parameter file
         if: always()
         run: if [ -n "${GCP_PROJECT_ID:-}" ]; then rm -f "functions/.env.${GCP_PROJECT_ID}"; fi
+
+# AI Office admin allowlist runtime refresh
