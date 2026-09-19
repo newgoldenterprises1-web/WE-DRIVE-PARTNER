@@ -171,7 +171,9 @@ exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, respons
     auditTool = tool || null;
     if (!ALLOWED_TOOLS.has(tool)) fail(403, 'Tool is not allowed.');
     const args = validateArgs(tool, request.body?.arguments || {});
-    const actor = READ_ONLY_TOOLS.has(tool) && tool === 'get_approval' ? actorId(request) : (!READ_ONLY_TOOLS.has(tool) ? actorId(request) : null);
+    // Every AI tool request carries the authenticated office actor so the
+    // gateway can audit and authorize read operations as well as writes.
+    const actor = actorId(request);
     auditActor = actor;
     if (tool === 'get_approval') {
       const result = await runTool(tool, args, actor);
