@@ -85,7 +85,17 @@ exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30, s
       });
       const text = await upstream.text();
       let body = {};
-      try { body = text ? JSON.parse(text) : {}; } catch (_) { body = { detail: 'AI service returned invalid JSON.' }; }
+      try {
+        body = text ? JSON.parse(text) : {};
+      } catch (_) {
+        body = {
+          ok: false,
+          error: 'AI service returned invalid JSON.',
+          upstream_status: upstream.status,
+          upstream_content_type: upstream.headers.get('content-type') || null,
+          upstream_preview: text.slice(0, 300),
+        };
+      }
       response.status(upstream.status).json(body);
       return;
     }
@@ -115,7 +125,17 @@ exports.aiOfficeProxy = onRequest({ region: 'asia-south1', timeoutSeconds: 30, s
 
     const text = await upstream.text();
     let body = {};
-    try { body = text ? JSON.parse(text) : {}; } catch (_) { body = { detail: 'AI service returned invalid JSON.' }; }
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch (_) {
+      body = {
+        ok: false,
+        error: 'AI service returned invalid JSON.',
+        upstream_status: upstream.status,
+        upstream_content_type: upstream.headers.get('content-type') || null,
+        upstream_preview: text.slice(0, 300),
+      };
+    }
     response.status(upstream.status).json(body);
   } catch (error) {
     const status = Number(error.status) || (error.code === 'auth/id-token-revoked' || error.code === 'auth/argument-error' ? 401 : 500);
