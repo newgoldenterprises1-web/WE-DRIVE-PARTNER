@@ -53,7 +53,7 @@ function validateBody(body) {
 }
 
 async function verifyOfficeUser(request) {
-  const decoded = await getAuth().verifyIdToken(bearerToken(request), true);
+  // Verify the Firebase ID token without the optional revocation lookup.\n  // This avoids requiring Firebase Auth user-read permissions for the proxy runtime.\n  const decoded = await getAuth().verifyIdToken(bearerToken(request));
   const configuredEmails = String(process.env.AI_OFFICE_ADMIN_EMAILS || AI_OFFICE_ADMIN_EMAILS.value() || '')
     .split(',')
     .map((value) => value.trim().toLowerCase())
