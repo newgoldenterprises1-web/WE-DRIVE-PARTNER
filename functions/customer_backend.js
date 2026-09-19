@@ -166,6 +166,43 @@ exports.createCustomerBooking = onCall(
   },
 );
 
+exports.cancelCustomerBooking = onCall(
+  { region: 'asia-south1' },
+  async (request) => {
+    const uid = requireCustomer(request);
+    const bookingId = optionalString(request.data?.bookingId, 160);
+    const reason = optionalString(request.data?.reason, 300) || 'Cancelled by customer';
+    if (!bookingId) throw new HttpsError('invalid-argument', 'Booking ID is required.');
+
+    const bookingRef = db.collection('bookings').doc(bookingId);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(bookingRef);
+      if (!snap.exists) throw new HttpsError('not-found', 'Booking not found.');
+
+      const data = snap.data() || {};
+      if (String(data.customerId || '') !== uid) {
+        throw new HttpsError('permission-denied', 'You cannot cancel this booking.');
+      }
+
+      const current = String(data.status || data.bookingStatus || '').toUpperCase();
+      if (['COMPLETED', 'CANCELLED', 'TRIP_STARTED', 'IN_PROGRESS', 'STARTED'].includes(current)) {
+        throw new HttpsError('failed-precondition', 'This booking can no longer be cancelled.');
+      }
+
+      tx.set(bookingRef, {
+        status: 'CANCELLED',
+        bookingStatus: 'CANCELLED',
+        cancelledBy: 'customer',
+        cancellationReason: reason,
+        cancelledAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+
+    return { ok: true, bookingId, status: 'CANCELLED' };
+  },
+);
+
 exports.enrichCustomerBookingOnAssign = onDocumentWritten(
   { document: 'bookings/{bookingId}', region: 'asia-south1' },
   async (event) => {
