@@ -2,6 +2,7 @@ name: Deploy AI Office Proxy
 # redeploy latest authenticated proxy user-context + live operational summary + upstream diagnostics fix
 # deploy trigger: authenticated actor propagation
 # AI Office auth uses standard ID-token verification; no privileged revocation lookup is required.
+# Deployment trigger: backend health query updated to include immediate bookings.
 
 on:
   workflow_dispatch:
