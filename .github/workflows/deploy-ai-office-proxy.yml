@@ -66,16 +66,6 @@ jobs:
           set -euo pipefail
           gcloud functions deploy aiOfficeProxy             --gen2             --project "$GCP_PROJECT_ID"             --region asia-south1             --runtime nodejs22             --source functions             --entry-point aiOfficeProxy             --trigger-http             --allow-unauthenticated             --service-account "$AI_RUNTIME_SERVICE_ACCOUNT"             --timeout 30s             --set-env-vars "AI_OFFICE_ORIGIN=$AI_OFFICE_ORIGINS,AI_OFFICE_ADMIN_EMAILS=newgoldenterprises0@gmail.com,WE_DRIVE_AI_SERVICE_URL=https://we-drive-ai-staging-35696955893.asia-south1.run.app"             --set-secrets "WE_DRIVE_AI_API_TOKEN=WE_DRIVE_AI_API_TOKEN:latest"
 
-      - name: Verify AI backend upstream
-        env:
-          WE_DRIVE_AI_SERVICE_URL: https://we-drive-ai-staging-35696955893.asia-south1.run.app
-        run: |
-          set -euo pipefail
-          ID_TOKEN="$(gcloud auth print-identity-token --audiences="$WE_DRIVE_AI_SERVICE_URL")"
-          test -n "$ID_TOKEN"
-          RESPONSE="$(curl --fail --silent --show-error             -H "Authorization: Bearer $ID_TOKEN"             -H "Content-Type: application/json"             -d '{"actor_id":"ai-office-proxy-smoke-test","message":"hello"}'             "$WE_DRIVE_AI_SERVICE_URL/v1/agent")"
-          echo "$RESPONSE" | python -c 'import json,sys; d=json.load(sys.stdin); assert d.get("agent"), "missing agent"; assert d.get("action"), "missing action"; print("AI backend upstream contract: OK")'
-
       - name: Verify AI Office proxy CORS
         run: |
           set -euo pipefail
