@@ -55,6 +55,29 @@ test('notification channel is normalized during validation', () => {
   assert.equal(args.channel, 'push');
 });
 
+test('marketing actions are approval-gated and status/draft are read-only', () => {
+  assert.equal(ALLOWED_TOOLS.has('get_marketing_status'), true);
+  assert.equal(ALLOWED_TOOLS.has('create_social_content'), true);
+  assert.equal(READ_ONLY_TOOLS.has('get_marketing_status'), true);
+  assert.equal(READ_ONLY_TOOLS.has('create_social_content'), true);
+  assert.equal(READ_ONLY_TOOLS.has('publish_social_content'), false);
+  assert.equal(READ_ONLY_TOOLS.has('send_whatsapp_campaign'), false);
+});
+
+test('marketing publish and WhatsApp arguments normalize safely', () => {
+  const publish = validateArgs('publish_social_content', { platform: 'Instagram', content: 'Launch', media_url: 'https://example.com/a.jpg' });
+  assert.deepEqual(publish, { platform: 'instagram', content: 'Launch', mediaUrl: 'https://example.com/a.jpg', scheduledAt: null });
+  const wa = validateArgs('send_whatsapp_campaign', { audience: '+919999999999', message: 'Hello' });
+  assert.deepEqual(wa, { audience: '+919999999999', message: 'Hello', scheduledAt: null });
+});
+
+test('approval decisions require a boolean and approval id', () => {
+  assert.deepEqual(validateArgs('decide_approval', { approval_id: 'approval-1', approved: true }), {
+    approvalId: 'approval-1', approved: true, decisionReason: ''
+  });
+  assert.throws(() => validateArgs('decide_approval', { approval_id: 'approval-1', approved: 'true' }), /approved must be a boolean/);
+});
+
 test('request_approval validates the critical action payload', () => {
   const args = validateArgs('request_approval', { action: 'production_deploy', reason: 'Release approved build', metadata: { execution: { tool: 'production_deploy', arguments: { environment: 'production', version: 'v1.2.3' } } } });
   assert.equal(args.action, 'production_deploy');
