@@ -12,6 +12,7 @@ const CRITICAL_ACTIONS = new Set([
   'production_deploy',
   'publish_social_content',
   'send_whatsapp_campaign',
+  'github_apply_patch',
 ]);
 const APPROVAL_TTL_MS = 15 * 60 * 1000;
 
