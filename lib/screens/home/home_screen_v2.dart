@@ -113,13 +113,35 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
 
     return SafeArea(
       child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('bookings')
-            .orderBy('createdAt', descending: true)
-            .limit(30)
-            .snapshots(),
+        stream: (() {
+          if (uid == null) {
+            return const Stream<QuerySnapshot<Map<String, dynamic>>>.empty();
+          }
+          return FirebaseFirestore.instance
+              .collection('bookings')
+              .where(
+                Filter.or(
+                  Filter('partnerId', isEqualTo: uid),
+                  Filter('status', whereIn: const [
+                    'SEARCHING',
+                    'REQUESTED',
+                    'searching',
+                    'requested',
+                  ]),
+                ),
+              )
+              .limit(30)
+              .snapshots();
+        })(),
         builder: (context, bookingSnapshot) {
-          final allDocs = bookingSnapshot.data?.docs ?? [];
+          final allDocs = [...(bookingSnapshot.data?.docs ?? [])]
+            ..sort((a, b) {
+              final aValue = a.data()['createdAt'];
+              final bValue = b.data()['createdAt'];
+              final aMillis = aValue is Timestamp ? aValue.millisecondsSinceEpoch : 0;
+              final bMillis = bValue is Timestamp ? bValue.millisecondsSinceEpoch : 0;
+              return bMillis.compareTo(aMillis);
+            });
           final docs = allDocs.where((doc) {
             final data = doc.data();
             final status = (data['status'] ?? '').toString().toUpperCase();
