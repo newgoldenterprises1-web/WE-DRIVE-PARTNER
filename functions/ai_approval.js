@@ -170,6 +170,12 @@ async function decideApproval({ approvalId, approverId, approved, decisionReason
     error.status = 400;
     throw error;
   }
+  const approverAllowlist = String(process.env.WE_DRIVE_AI_APPROVER_ALLOWLIST || '').split(',').map((item) => item.trim()).filter(Boolean);
+  if (approverAllowlist.length && !approverAllowlist.includes(approver)) {
+    const error = new Error('Actor is not authorized to decide approvals.');
+    error.status = 403;
+    throw error;
+  }
   const ref = db.collection('aiApprovals').doc(id);
   const result = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
