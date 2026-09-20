@@ -6,7 +6,7 @@ const gateway = require('../ai_gateway');
 const approval = require('../ai_approval');
 
 const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, executeApprovedAction } = gateway._test;
-const { normalizeExecutionMetadata, fingerprint } = approval;
+const { normalizeExecutionMetadata, fingerprint, assertExecutionMatchesAction } = approval;
 
 test('AI gateway exposes only the approved tool set', () => {
   assert.equal(ALLOWED_TOOLS.has('get_booking'), true);
@@ -127,14 +127,9 @@ test('audit log query is allowlisted, read-only and normalized', () => {
 });
 
 test('approval metadata binds the approval action to the execution tool', () => {
-  assert.throws(() => normalizeExecutionMetadata({
-    execution: { tool: 'send_whatsapp_campaign', arguments: { audience: '+919999999999', message: 'Hello' } }
-  }), /./);
-  assert.notEqual(fingerprint('publish_social_content', {
-    execution: { tool: 'publish_social_content', arguments: { platform: 'instagram', content: 'Hello' } }
-  }), fingerprint('send_whatsapp_campaign', {
-    execution: { tool: 'send_whatsapp_campaign', arguments: { audience: '+919999999999', message: 'Hello' } }
-  }));
+  const metadata = { execution: { tool: 'publish_social_content', arguments: { platform: 'instagram', content: 'Hello' } } };
+  assert.deepEqual(assertExecutionMatchesAction('publish_social_content', metadata), metadata);
+  assert.throws(() => assertExecutionMatchesAction('send_whatsapp_campaign', metadata), /Approval action does not match execution tool/);
 });
 
 test('approval metadata rejects prototype-pollution keys', () => {
