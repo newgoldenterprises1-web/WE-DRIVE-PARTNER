@@ -86,17 +86,7 @@ function validateArgs(tool, args) {
     case 'get_system_health': return {};
     case 'get_audit_logs': return { limit: Math.min(Math.max(Number(args.limit || 50), 1), 100), actorId: optionalText(args.actor_id, 160), tool: optionalText(args.tool, 100), outcome: optionalText(args.outcome, 100) };
     case 'github_analyze': return { repository: githubRepository(args.repository), task: text(args.task, 'task', 2000) };
-    case 'github_apply_patch': {
-      const repository = githubRepository(args.repository);
-      const branch = text(args.branch, 'branch', 160);
-      if (!branch.startsWith('ai-dev/')) fail(400, 'Development Agent may only write to ai-dev/* branches.');
-      const path = text(args.path, 'path', 300);
-      if (path.includes('..') || path.startsWith('/')) fail(400, 'Invalid repository path.');
-      const content = text(args.content, 'content', 24000);
-      const message = text(args.message, 'message', 200);
-      const sha = text(args.sha, 'sha', 80);
-      return { repository, branch, path, content, message, sha };
-    }
+    case 'github_apply_patch': return githubPatchInput(args);
     case 'get_marketing_status': return {};
     case 'create_social_content': return { platform: text(args.platform, 'platform', 40).toLowerCase(), contentType: text(args.content_type, 'content_type', 40).toLowerCase(), topic: text(args.topic, 'topic', 500), tone: optionalText(args.tone, 80), cta: optionalText(args.cta, 200), mediaUrl: optionalText(args.media_url, 2000) };
     case 'publish_social_content': return { platform: text(args.platform, 'platform', 40).toLowerCase(), content: text(args.content, 'content', 10000), mediaUrl: optionalText(args.media_url, 2000), scheduledAt: optionalText(args.scheduled_at, 80) };
@@ -124,6 +114,39 @@ function githubRepository(value) {
   return repository;
 }
 
+function githubPatchInput(args) {
+  const repository = githubRepository(args.repository);
+  const branch = text(args.branch, 'branch', 160);
+  if (!branch.startsWith('ai-dev/') || branch.includes('..') || branch.includes('//') || /[\\s\\u0000-\\u001f]/.test(branch) || branch.endsWith('/')) {
+    fail(400, 'Development Agent may only write to a safe ai-dev/* branch.');
+  }
+  const path = text(args.path, 'path', 300);
+  const normalizedPath = path.replace(/\\\\/g, '/');
+  const lowerPath = normalizedPath.toLowerCase();
+  if (
+    normalizedPath.includes('..') ||
+    normalizedPath.startsWith('/') ||
+    lowerPath.startsWith('.git/') ||
+    lowerPath.includes('/.git/') ||
+    lowerPath.endsWith('/.env') ||
+    lowerPath.endsWith('/.env.local') ||
+    lowerPath.endsWith('/.env.production') ||
+    lowerPath.includes('serviceaccount') ||
+    lowerPath.includes('private_key') ||
+    lowerPath.includes('credentials')
+  ) {
+    fail(400, 'Development Agent may not modify protected or secret-bearing repository paths.');
+  }
+  const content = text(args.content, 'content', 24000);
+  if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(content) || /(?:api[_-]?key|secret|password|private[_-]?key)\\s*[:=]\\s*['"]?[A-Za-z0-9_\\-\\+/=]{16,}/i.test(content)) {
+    fail(400, 'Development Agent patch contains credential-like material.');
+  }
+  const message = text(args.message, 'message', 200).replace(/[\\r\\n]+/g, ' ');
+  const sha = text(args.sha, 'sha', 80);
+  if (!/^[0-9a-f]{7,64}$/i.test(sha)) fail(400, 'sha must be a Git blob SHA.');
+  return { repository, branch, path: normalizedPath, content, message, sha };
+}
+
 async function githubGet(path) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) fail(503, 'GITHUB_TOKEN is not configured.');
@@ -145,14 +168,7 @@ async function githubGet(path) {
 }
 
 async function githubApplyPatch(args) {
-  const repository = githubRepository(args.repository);
-  const branch = text(args.branch, 'branch', 160);
-  if (!branch.startsWith('ai-dev/')) fail(400, 'Development Agent may only write to ai-dev/* branches.');
-  const path = text(args.path, 'path', 300);
-  if (path.includes('..') || path.startsWith('/')) fail(400, 'Invalid repository path.');
-  const content = text(args.content, 'content', 24000);
-  const message = text(args.message, 'message', 200);
-  const sha = text(args.sha, 'sha', 80);
+  const { repository, branch, path, content, message, sha } = githubPatchInput(args);
   const token = process.env.GITHUB_TOKEN;
   if (!token) fail(503, 'GITHUB_TOKEN is not configured.');
   const result = await fetch(`https://api.github.com/repos/${repository}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, {
