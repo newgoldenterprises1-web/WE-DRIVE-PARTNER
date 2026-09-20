@@ -51,6 +51,7 @@ function validateArgs(tool, args) {
     case 'send_notification': return { recipientId: text(args.recipient_id, 'recipient_id', 160), channel: text(args.channel, 'channel', 40).toLowerCase(), message: text(args.message, 'message', 2000), jobId: optionalText(args.job_id, 160) };
     case 'get_business_report': return { periodStart: text(args.period_start, 'period_start', 40), periodEnd: text(args.period_end, 'period_end', 40), metrics: Array.isArray(args.metrics) ? args.metrics.slice(0, 30).map((m) => String(m).slice(0, 80)) : null };
     case 'get_system_health': return {};
+    case 'github_analyze': return { repository: githubRepository(args.repository), task: text(args.task, 'task', 2000) };
     case 'get_marketing_status': return {};
     case 'create_social_content': return { platform: text(args.platform, 'platform', 40).toLowerCase(), contentType: text(args.content_type, 'content_type', 40).toLowerCase(), topic: text(args.topic, 'topic', 500), tone: optionalText(args.tone, 80), cta: optionalText(args.cta, 200), mediaUrl: optionalText(args.media_url, 2000) };
     case 'publish_social_content': return { platform: text(args.platform, 'platform', 40).toLowerCase(), content: text(args.content, 'content', 10000), mediaUrl: optionalText(args.media_url, 2000), scheduledAt: optionalText(args.scheduled_at, 80) };
