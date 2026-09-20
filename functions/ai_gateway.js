@@ -243,7 +243,7 @@ async function executeApprovedAction(args, actor) {
   // consumeApproval is the final authorization boundary: exact actor + action + arguments,
   // approved state, TTL and one-time consumption are checked transactionally before execution.
   await consumeApproval({ approvalId: args.approvalId, actorId: actor, action: args.action, metadata: safeMetadata });
-  return executor({ actorId: actor, arguments: safeMetadata.execution.arguments });
+  return executor(safeMetadata.execution.arguments);
 }
 
 async function runTool(tool, args, actor) {
