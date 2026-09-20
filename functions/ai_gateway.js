@@ -10,8 +10,8 @@ const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, comple
 if (!getApps().length) initializeApp();
 const db = getFirestore();
 
-const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action']);
-const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'get_approval']);
+const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action', 'get_audit_logs']);
+const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'get_approval', 'get_audit_logs']);
 const ARGUMENT_KEYS = {
   list_bookings: ['status', 'limit'],
   list_drivers: ['online', 'limit'],
@@ -28,6 +28,7 @@ const ARGUMENT_KEYS = {
   request_approval: ['action', 'reason', 'metadata'], get_approval: ['approval_id'],
   decide_approval: ['approval_id', 'approved', 'decision_reason'],
   execute_approved_action: ['approval_id', 'action', 'metadata'],
+  get_audit_logs: ['limit', 'actor_id', 'tool', 'outcome'],
 };
 function fail(status, message) { const error = new Error(message); error.status = status; throw error; }
 function text(value, name, max = 500) { if (typeof value !== 'string' || !value.trim()) fail(400, `${name} is required.`); return value.trim().slice(0, max); }
@@ -246,7 +247,35 @@ async function executeApprovedAction(args, actor) {
   return executor(safeMetadata.execution.arguments);
 }
 
+async function getAuditLogs(args, actor) {
+  const limit = Math.min(Math.max(Number(args.limit || 50), 1), 100);
+  const actorFilter = args.actorId ? text(args.actorId, 'actor_id', 160) : null;
+  const toolFilter = args.tool ? text(args.tool, 'tool', 100) : null;
+  const outcomeFilter = args.outcome ? text(args.outcome, 'outcome', 100) : null;
+  const snap = await db.collection('aiAuditLogs').orderBy('createdAt', 'desc').limit(100).get();
+  const logs = [];
+  for (const doc of snap.docs) {
+    const item = doc.data() || {};
+    if (actorFilter && String(item.actorId || '') !== actorFilter) continue;
+    if (toolFilter && String(item.tool || '') !== toolFilter) continue;
+    if (outcomeFilter && String(item.outcome || '') !== outcomeFilter) continue;
+    logs.push({
+      id: doc.id,
+      requestId: item.requestId || null,
+      actorId: item.actorId || null,
+      tool: item.tool || null,
+      status: Number(item.status || 0),
+      outcome: item.outcome || null,
+      metadata: item.metadata && typeof item.metadata === 'object' ? item.metadata : {},
+      createdAt: item.createdAt && typeof item.createdAt.toDate === 'function' ? item.createdAt.toDate().toISOString() : null,
+    });
+    if (logs.length >= limit) break;
+  }
+  return { ok: true, count: logs.length, logs, note: 'Audit records are read-only and sanitized; secrets are excluded by the audit logger.' };
+}
+
 async function runTool(tool, args, actor) {
+  if (tool === 'get_audit_logs') return getAuditLogs(args, actor);
   if (tool === 'request_approval') return createApproval({ actorId: actor, action: args.action, reason: args.reason, metadata: args.metadata });
   if (tool === 'get_approval') return getApproval(args.approvalId);
   if (tool === 'decide_approval') return decideApproval({ approvalId: args.approvalId, approverId: actor, approved: args.approved, decisionReason: args.decisionReason || '' });
