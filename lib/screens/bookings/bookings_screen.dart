@@ -18,7 +18,27 @@ class BookingsScreen extends StatelessWidget {
       backgroundColor: const Color(0xFFF7F9FC),
       appBar: AppBar(title: const Text('Live Bookings'), elevation: 0, automaticallyImplyLeading: false),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('bookings').orderBy('createdAt', descending: true).limit(50).snapshots(),
+        stream: (() {
+          final userId = FirebaseAuth.instance.currentUser?.uid;
+          if (userId == null) {
+            return const Stream<QuerySnapshot<Map<String, dynamic>>>.empty();
+          }
+          return FirebaseFirestore.instance
+              .collection('bookings')
+              .where(
+                Filter.or(
+                  Filter('partnerId', isEqualTo: userId),
+                  Filter('status', whereIn: const [
+                    'SEARCHING',
+                    'REQUESTED',
+                    'searching',
+                    'requested',
+                  ]),
+                ),
+              )
+              .limit(50)
+              .snapshots();
+        })(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -27,7 +47,14 @@ class BookingsScreen extends StatelessWidget {
             return Center(child: Padding(padding: const EdgeInsets.all(24), child: Text('Could not load bookings. ${snapshot.error}', textAlign: TextAlign.center)));
           }
 
-          final docs = snapshot.data?.docs ?? [];
+          final docs = [...(snapshot.data?.docs ?? [])]
+            ..sort((a, b) {
+              final aValue = a.data()['createdAt'];
+              final bValue = b.data()['createdAt'];
+              final aMillis = aValue is Timestamp ? aValue.millisecondsSinceEpoch : 0;
+              final bMillis = bValue is Timestamp ? bValue.millisecondsSinceEpoch : 0;
+              return bMillis.compareTo(aMillis);
+            });
           final liveBookings = docs.map((doc) {
             final data = doc.data();
             final bookingDate = data['bookingDate']?.toString().trim();
