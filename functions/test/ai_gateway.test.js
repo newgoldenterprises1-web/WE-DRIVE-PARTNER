@@ -5,7 +5,7 @@ process.env.WE_DRIVE_AI_GATEWAY_TOKEN = 'test-token';
 const gateway = require('../ai_gateway');
 const approval = require('../ai_approval');
 
-const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, executeApprovedAction } = gateway._test;
+const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, executeApprovedAction, summarizeWorkflowRuns } = gateway._test;
 const { normalizeExecutionMetadata, fingerprint, assertExecutionMatchesAction, approvalDecisionState, approvalConsumptionState } = approval;
 
 test('AI gateway exposes only the approved tool set', () => {
@@ -255,3 +255,27 @@ test('Development Agent blocks unsafe branches, protected paths and credential-l
     path: 'src/example.py', content: 'print("ok")', message: 'unsafe', sha: 'not-a-sha'
   }), /Git blob SHA/);
 });
+
+test('Development Agent CI summary flags failed workflow runs without exposing secrets', () => {
+  assert.deepEqual(summarizeWorkflowRuns([
+    { id: 2, name: 'Security Scan', status: 'completed', conclusion: 'failure' },
+    { id: 1, name: 'Backend Tests', status: 'completed', conclusion: 'success' },
+  ]), {
+    status: 'completed',
+    conclusion: 'failure',
+    latestWorkflow: 'Security Scan',
+    failedCount: 1,
+    attentionRequired: true,
+  });
+
+  assert.deepEqual(summarizeWorkflowRuns([
+    { id: 3, name: 'Backend Tests', status: 'in_progress', conclusion: null },
+  ]), {
+    status: 'in_progress',
+    conclusion: 'unknown',
+    latestWorkflow: 'Backend Tests',
+    failedCount: 0,
+    attentionRequired: false,
+  });
+});
+
