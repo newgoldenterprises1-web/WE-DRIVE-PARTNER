@@ -35,6 +35,7 @@ function validateArgs(tool, args) {
   if (unknown.length) fail(400, `Unknown argument(s): ${unknown.join(', ')}.`);
   switch (tool) {
     case 'list_bookings': return { status: optionalText(args.status, 40)?.toUpperCase() || null, limit: Math.min(Math.max(Number(args.limit || 50), 1), 100) };
+    case 'list_drivers': return { online: args.online !== false, limit: Math.min(Math.max(Number(args.limit || 50), 1), 100) };
     case 'get_booking': return { bookingId: text(args.booking_id, 'booking_id', 160) };
     case 'get_customer': return { customerId: text(args.customer_id, 'customer_id', 160) };
     case 'get_driver_status': return { driverId: text(args.driver_id, 'driver_id', 160) };
