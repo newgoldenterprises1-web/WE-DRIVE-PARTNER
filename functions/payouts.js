@@ -3,7 +3,7 @@ const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 
 const db = getFirestore();
 
-exports.setPayoutPreference = onCall({ region: 'asia-south1' }, async (request) => {
+exports.setPayoutPreference = onCall({ region: 'asia-south1', enforceAppCheck: true }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid || request.auth?.token?.role !== 'driver') {
     throw new Error('Driver access is required.');
@@ -23,7 +23,7 @@ exports.setPayoutPreference = onCall({ region: 'asia-south1' }, async (request) 
   return { ok: true, frequency };
 });
 
-exports.requestPayout = onCall({ region: 'asia-south1' }, async (request) => {
+exports.requestPayout = onCall({ region: 'asia-south1', enforceAppCheck: true }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid || request.auth?.token?.role !== 'driver') {
     throw new Error('Driver access is required.');
