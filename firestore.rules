@@ -53,12 +53,6 @@ service cloud.firestore {
       }
     }
 
-    match /partnerPublic/{partnerId} {
-      allow get: if isCustomer() || (isDriver() && request.auth.uid == partnerId);
-      allow list: if false;
-      allow write: if false;
-    }
-
     match /users/{userId} {
       allow read, create, update: if signedIn() && request.auth.uid == userId;
       allow delete: if false;
