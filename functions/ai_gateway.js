@@ -41,7 +41,7 @@ function enforceRateLimit(request, isWrite) {
 }
 
 
-const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action', 'get_audit_logs']);
+const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'github_analyze', 'github_apply_patch', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action', 'get_audit_logs']);
 const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'get_approval', 'get_audit_logs']);
 const ARGUMENT_KEYS = {
   list_bookings: ['status', 'limit'],
@@ -85,6 +85,17 @@ function validateArgs(tool, args) {
     case 'get_system_health': return {};
     case 'get_audit_logs': return { limit: Math.min(Math.max(Number(args.limit || 50), 1), 100), actorId: optionalText(args.actor_id, 160), tool: optionalText(args.tool, 100), outcome: optionalText(args.outcome, 100) };
     case 'github_analyze': return { repository: githubRepository(args.repository), task: text(args.task, 'task', 2000) };
+    case 'github_apply_patch': {
+      const repository = githubRepository(args.repository);
+      const branch = text(args.branch, 'branch', 160);
+      if (!branch.startsWith('ai-dev/')) fail(400, 'Development Agent may only write to ai-dev/* branches.');
+      const path = text(args.path, 'path', 300);
+      if (path.includes('..') || path.startsWith('/')) fail(400, 'Invalid repository path.');
+      const content = text(args.content, 'content', 24000);
+      const message = text(args.message, 'message', 200);
+      const sha = text(args.sha, 'sha', 80);
+      return { repository, branch, path, content, message, sha };
+    }
     case 'get_marketing_status': return {};
     case 'create_social_content': return { platform: text(args.platform, 'platform', 40).toLowerCase(), contentType: text(args.content_type, 'content_type', 40).toLowerCase(), topic: text(args.topic, 'topic', 500), tone: optionalText(args.tone, 80), cta: optionalText(args.cta, 200), mediaUrl: optionalText(args.media_url, 2000) };
     case 'publish_social_content': return { platform: text(args.platform, 'platform', 40).toLowerCase(), content: text(args.content, 'content', 10000), mediaUrl: optionalText(args.media_url, 2000), scheduledAt: optionalText(args.scheduled_at, 80) };
@@ -130,6 +141,33 @@ async function githubGet(path) {
     throw error;
   }
   return payload;
+}
+
+async function githubApplyPatch(args) {
+  const repository = githubRepository(args.repository);
+  const branch = text(args.branch, 'branch', 160);
+  if (!branch.startsWith('ai-dev/')) fail(400, 'Development Agent may only write to ai-dev/* branches.');
+  const path = text(args.path, 'path', 300);
+  if (path.includes('..') || path.startsWith('/')) fail(400, 'Invalid repository path.');
+  const content = text(args.content, 'content', 24000);
+  const message = text(args.message, 'message', 200);
+  const sha = text(args.sha, 'sha', 80);
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) fail(503, 'GITHUB_TOKEN is not configured.');
+  const result = await fetch(`https://api.github.com/repos/${repository}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'Content-Type': 'application/json',
+      'User-Agent': 'WE-DRIVE-AI-Development-Agent',
+    },
+    body: JSON.stringify({ message, content: Buffer.from(content, 'utf8').toString('base64'), sha, branch }),
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok) fail(result.status >= 400 && result.status < 500 ? 400 : 502, payload?.message || 'GitHub patch failed.');
+  return { ok: true, repository, branch, path, commitSha: payload.commit?.sha || null, writeAccess: true, note: 'Patch applied only to an ai-dev/* branch. Review and merge remain human-controlled.' };
 }
 
 async function githubAnalyze(args) {
