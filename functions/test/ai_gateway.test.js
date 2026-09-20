@@ -55,6 +55,32 @@ test('notification channel is normalized during validation', () => {
   assert.equal(args.channel, 'push');
 });
 
+test('Development Agent patch tool is allowlisted but not read-only', () => {
+  assert.equal(ALLOWED_TOOLS.has('github_apply_patch'), true);
+  assert.equal(READ_ONLY_TOOLS.has('github_apply_patch'), false);
+  const args = validateArgs('github_apply_patch', {
+    repository: 'newgoldenterprises1-web/WE-DRIVE-AI',
+    branch: 'ai-dev/security-hardening',
+    path: 'src/example.py',
+    content: 'print("ok")',
+    message: 'test patch',
+    sha: 'abc123',
+  });
+  assert.equal(args.branch, 'ai-dev/security-hardening');
+  assert.equal(args.path, 'src/example.py');
+});
+
+test('Development Agent cannot write outside ai-dev branches', () => {
+  assert.throws(() => validateArgs('github_apply_patch', {
+    repository: 'newgoldenterprises1-web/WE-DRIVE-AI',
+    branch: 'main',
+    path: 'src/example.py',
+    content: 'print("ok")',
+    message: 'unsafe patch',
+    sha: 'abc123',
+  }), /ai-dev/);
+});
+
 test('marketing actions are approval-gated and status/draft are read-only', () => {
   assert.equal(ALLOWED_TOOLS.has('get_marketing_status'), true);
   assert.equal(ALLOWED_TOOLS.has('create_social_content'), true);
