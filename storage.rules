@@ -1,7 +1,7 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function signedIn() { return request.auth != null; }
+    function signedIn() { return request.app != null && request.auth != null; }
     function isDriver() { return signedIn() && request.auth.token.role == 'driver'; }
     function ownsBooking(uid, bookingId) {
       return isDriver()
