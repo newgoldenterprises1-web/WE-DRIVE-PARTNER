@@ -126,6 +126,26 @@ test('audit log query is allowlisted, read-only and normalized', () => {
   });
 });
 
+test('approval metadata binds the approval action to the execution tool', () => {
+  assert.throws(() => normalizeExecutionMetadata({
+    execution: { tool: 'send_whatsapp_campaign', arguments: { audience: '+919999999999', message: 'Hello' } }
+  }), /./);
+  assert.notEqual(fingerprint('publish_social_content', {
+    execution: { tool: 'publish_social_content', arguments: { platform: 'instagram', content: 'Hello' } }
+  }), fingerprint('send_whatsapp_campaign', {
+    execution: { tool: 'send_whatsapp_campaign', arguments: { audience: '+919999999999', message: 'Hello' } }
+  }));
+});
+
+test('approval metadata rejects prototype-pollution keys', () => {
+  assert.throws(() => normalizeExecutionMetadata({
+    execution: {
+      tool: 'production_deploy',
+      arguments: { constructor: { polluted: true } }
+    }
+  }), /Unsafe metadata key is not permitted/);
+});
+
 test('approval metadata rejects credential-like fields and excessive nesting', () => {
   assert.throws(() => normalizeExecutionMetadata({
     execution: { tool: 'production_deploy', arguments: { api_key: 'should-not-be-here' } }
