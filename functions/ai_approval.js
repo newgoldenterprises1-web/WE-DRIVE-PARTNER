@@ -96,6 +96,65 @@ function normalizeExecutionMetadata(metadata = {}) {
   };
 }
 
+function approvalDecisionState(current, approver, approved, now = Date.now()) {
+  if (!current || typeof current !== 'object') {
+    const error = new Error('Approval request not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (current.actorId === approver) {
+    const error = new Error('Approval requester cannot approve or reject their own request.');
+    error.status = 403;
+    throw error;
+  }
+  if (current.status !== 'PENDING') {
+    const error = new Error('Approval request has already been decided.');
+    error.status = 409;
+    throw error;
+  }
+  const expiresAt = current.expiresAt && typeof current.expiresAt.toMillis === 'function'
+    ? current.expiresAt.toMillis()
+    : new Date(current.expiresAt || 0).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+    const error = new Error('Approval request has expired.');
+    error.status = 410;
+    throw error;
+  }
+  return approved ? 'APPROVED' : 'REJECTED';
+}
+
+function approvalConsumptionState(current, actor, action, expectedFingerprint, now = Date.now()) {
+  if (!current || typeof current !== 'object') {
+    const error = new Error('Approval request not found.');
+    error.status = 404;
+    throw error;
+  }
+  if (current.status !== 'APPROVED') {
+    const error = new Error('Approval is not approved for execution.');
+    error.status = 409;
+    throw error;
+  }
+  if (current.actorId !== actor) {
+    const error = new Error('Approval actor does not match execution actor.');
+    error.status = 403;
+    throw error;
+  }
+  if (current.actionFingerprint !== expectedFingerprint) {
+    const error = new Error('Approval does not match the requested action or arguments.');
+    error.status = 409;
+    throw error;
+  }
+  const expiresAt = current.expiresAt && typeof current.expiresAt.toMillis === 'function'
+    ? current.expiresAt.toMillis()
+    : new Date(current.expiresAt || 0).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+    const error = new Error('Approval request has expired.');
+    error.status = 410;
+    throw error;
+  }
+  return 'CONSUMED';
+}
+
 function assertExecutionMatchesAction(action, metadata) {
   const safeMetadata = normalizeExecutionMetadata(metadata);
   if (safeMetadata.execution.tool !== action) {
@@ -185,26 +244,13 @@ async function decideApproval({ approvalId, approverId, approved, decisionReason
       throw error;
     }
     const current = snap.data() || {};
-    if (current.actorId === approver) {
-      const error = new Error('Approval requester cannot approve or reject their own request.');
-      error.status = 403;
+    let status;
+    try {
+      status = approvalDecisionState(current, approver, approved);
+    } catch (error) {
+      if (error.status === 410) tx.update(ref, { status: 'EXPIRED', updatedAt: FieldValue.serverTimestamp() });
       throw error;
     }
-    if (current.status !== 'PENDING') {
-      const error = new Error('Approval request has already been decided.');
-      error.status = 409;
-      throw error;
-    }
-    const expiresAt = current.expiresAt && typeof current.expiresAt.toMillis === 'function'
-      ? current.expiresAt.toMillis()
-      : new Date(current.expiresAt || 0).getTime();
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-      tx.update(ref, { status: 'EXPIRED', updatedAt: FieldValue.serverTimestamp() });
-      const error = new Error('Approval request has expired.');
-      error.status = 410;
-      throw error;
-    }
-    const status = approved ? 'APPROVED' : 'REJECTED';
     tx.update(ref, {
       status,
       approvedBy: approver,
@@ -234,28 +280,10 @@ async function consumeApproval({ approvalId, actorId, action, metadata = {} }) {
       throw error;
     }
     const current = snap.data() || {};
-    if (current.status !== 'APPROVED') {
-      const error = new Error('Approval is not approved for execution.');
-      error.status = 409;
-      throw error;
-    }
-    if (current.actorId !== actor) {
-      const error = new Error('Approval actor does not match execution actor.');
-      error.status = 403;
-      throw error;
-    }
-    if (current.actionFingerprint !== expectedFingerprint) {
-      const error = new Error('Approval does not match the requested action or arguments.');
-      error.status = 409;
-      throw error;
-    }
-    const expiresAt = current.expiresAt && typeof current.expiresAt.toMillis === 'function'
-      ? current.expiresAt.toMillis()
-      : new Date(current.expiresAt || 0).getTime();
-    if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-      tx.update(ref, { status: 'EXPIRED', updatedAt: FieldValue.serverTimestamp() });
-      const error = new Error('Approval request has expired.');
-      error.status = 410;
+    try {
+      approvalConsumptionState(current, actor, action, expectedFingerprint);
+    } catch (error) {
+      if (error.status === 410) tx.update(ref, { status: 'EXPIRED', updatedAt: FieldValue.serverTimestamp() });
       throw error;
     }
     tx.update(ref, {
@@ -280,5 +308,7 @@ module.exports = {
   fingerprint,
   normalizeExecutionMetadata,
   assertExecutionMatchesAction,
+  approvalDecisionState,
+  approvalConsumptionState,
   APPROVAL_TTL_MS,
 };
