@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { recordAudit } = require('./ai_audit');
 
 const db = getFirestore();
 
@@ -75,6 +76,7 @@ async function createApproval({ actorId, action, reason, metadata = {} }) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  recordAudit({ requestId: approvalRef.id, actorId: actor, tool: action, status: 202, outcome: 'approval_requested', metadata: { approvalId: approvalRef.id, action, reason: requireText(reason, 'reason', 1000) } }).catch(() => {});
   return { ok: true, approvalId: approvalRef.id, status: 'PENDING' };
 }
 
@@ -130,6 +132,7 @@ async function decideApproval({ approvalId, approverId, approved, decisionReason
     });
     return status;
   });
+  recordAudit({ requestId: id, actorId: approver, tool: 'decide_approval', status: 200, outcome: approved ? 'approval_approved' : 'approval_rejected', metadata: { approvalId: id, decisionReason: String(decisionReason || '').slice(0, 1000) } }).catch(() => {});
   return { ok: true, approvalId: id, status: result, decidedBy: approver };
 }
 
@@ -181,6 +184,7 @@ async function consumeApproval({ approvalId, actorId, action, metadata = {} }) {
     });
   });
 
+  recordAudit({ requestId: id, actorId: actor, tool: action, status: 200, outcome: 'approval_consumed', metadata: { approvalId: id, action } }).catch(() => {});
   return { ok: true, approvalId: id, status: 'CONSUMED' };
 }
 
