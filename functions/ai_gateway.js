@@ -10,6 +10,37 @@ const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, comple
 if (!getApps().length) initializeApp();
 const db = getFirestore();
 
+const RATE_LIMIT = { read: { windowMs: 60_000, max: 120 }, write: { windowMs: 60_000, max: 30 } };
+const rateBuckets = new Map();
+function securityHeaders(response) {
+  response.set('X-Content-Type-Options', 'nosniff');
+  response.set('X-Frame-Options', 'DENY');
+  response.set('Referrer-Policy', 'no-referrer');
+  response.set('Cache-Control', 'no-store');
+  response.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+}
+function requestIdentity(request) {
+  const ip = String(request.ip || request.get('x-forwarded-for') || 'unknown').split(',')[0].trim().slice(0, 80);
+  const auth = String(request.get('authorization') || '');
+  return crypto.createHash('sha256').update(`${ip}|${auth}`).digest('hex').slice(0, 32);
+}
+function enforceRateLimit(request, isWrite) {
+  const policy = isWrite ? RATE_LIMIT.write : RATE_LIMIT.read;
+  const now = Date.now();
+  const key = `${isWrite ? 'w' : 'r'}:${requestIdentity(request)}`;
+  const current = rateBuckets.get(key);
+  if (!current || now - current.startedAt >= policy.windowMs) {
+    rateBuckets.set(key, { startedAt: now, count: 1 });
+  } else {
+    current.count += 1;
+    if (current.count > policy.max) fail(429, 'Rate limit exceeded. Please retry later.');
+  }
+  if (rateBuckets.size > 5000) {
+    for (const [bucketKey, bucket] of rateBuckets) if (now - bucket.startedAt >= policy.windowMs) rateBuckets.delete(bucketKey);
+  }
+}
+
+
 const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action', 'get_audit_logs']);
 const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'get_approval', 'get_audit_logs']);
 const ARGUMENT_KEYS = {
@@ -67,7 +98,7 @@ function validateArgs(tool, args) {
 }
 function authenticate(request) { const configured = process.env.WE_DRIVE_AI_GATEWAY_TOKEN; const header = request.get('authorization') || ''; const match = /^Bearer\s+(.+)$/i.exec(header.trim()); const supplied = match ? match[1].trim() : ''; if (!configured || !supplied) fail(401, 'AI gateway authentication failed.'); const expected = Buffer.from(configured); const actual = Buffer.from(supplied); if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) fail(401, 'AI gateway authentication failed.'); }
 function idempotencyKey(request) { const key = request.get('x-idempotency-key'); if (!key || key.length > 200) fail(400, 'X-Idempotency-Key is required for write operations.'); return key; }
-function actorId(request) { const actor = request.get('x-we-drive-ai-actor-id'); if (!actor || actor.length > 160) fail(400, 'X-WE-DRIVE-AI-Actor-ID is required.'); return actor.trim(); }
+function actorId(request) { const actor = request.get('x-we-drive-ai-actor-id'); if (!actor || actor.length > 160) fail(400, 'X-WE-DRIVE-AI-Actor-ID is required.'); const value = actor.trim(); if (!/^[A-Za-z0-9._@:+-]{1,160}$/.test(value)) fail(400, 'Invalid actor identity.'); const allowlist = optionalText(process.env.WE_DRIVE_AI_ACTOR_ALLOWLIST, 4000); if (allowlist) { const allowed = new Set(allowlist.split(',').map((item) => item.trim()).filter(Boolean)); if (!allowed.has(value)) fail(403, 'Actor is not authorized.'); } return value; }
 
 
 function githubRepository(value) {
@@ -434,7 +465,7 @@ async function runTool(tool, args, actor) {
     });
     return { ok: true, onlineOnly, drivers };
   }
-  if (tool === 'get_booking') { const snap = await db.collection('bookings').doc(args.bookingId).get(); if (!snap.exists) fail(404, 'Booking not found.'); return { ok: true, booking: { id: snap.id, ...snap.data() } }; }
+  if (tool === 'get_booking') { const snap = await db.collection('bookings').doc(args.bookingId).get(); if (!snap.exists) fail(404, 'Booking not found.'); const b = snap.data() || {}; return { ok: true, booking: { id: snap.id, status: b.status || null, customerId: b.customerId || b.userId || null, driverId: b.driverId || b.partnerId || null, pickupLocation: b.pickupLocation || b.location || null, dropLocation: b.dropLocation || null, bookingDate: b.bookingDate || null, startTime: b.startTime || null, durationMinutes: b.durationMinutes || null, fare: Number(b.fare || 0), paymentStatus: b.paymentStatus || null, serviceType: b.serviceType || b.service || null, createdAt: b.createdAt || null } }; }
   if (tool === 'get_customer') {
     const [u, p] = await Promise.all([db.collection('users').doc(args.customerId).get(), db.collection('profiles').doc(args.customerId).get()]);
     if (!u.exists && !p.exists) fail(404, 'Customer not found.');
@@ -453,7 +484,7 @@ async function runTool(tool, args, actor) {
     } };
   }
   if (tool === 'get_driver_status') { const snap = await db.collection('partners').doc(args.driverId).get(); if (!snap.exists) fail(404, 'Driver not found.'); const d = snap.data() || {}; return { ok: true, driver: { id: snap.id, online: d.online === true, lastSeenAt: d.lastSeenAt || null, latitude: d.latitude ?? null, longitude: d.longitude ?? null } }; }
-  if (tool === 'get_available_drivers') { const snap = await db.collection('partners').where('online', '==', true).limit(50).get(); const drivers = snap.docs.map((doc) => { const d = doc.data() || {}; return { id: doc.id, name: d.name || d.fullName || 'WE DRIVE Chauffeur', phoneNumber: d.phoneNumber || null, rating: Number(d.rating || 0), latitude: d.latitude ?? null, longitude: d.longitude ?? null, verified: d.verified === true }; }); return { ok: true, serviceDate: args.serviceDate, startTime: args.startTime, durationMinutes: args.durationMinutes, location: args.location, requestedLatitude: args.latitude, requestedLongitude: args.longitude, requiredService: args.requiredService, drivers }; }
+  if (tool === 'get_available_drivers') { const snap = await db.collection('partners').where('online', '==', true).limit(50).get(); const drivers = snap.docs.map((doc) => { const d = doc.data() || {}; return { id: doc.id, name: d.name || d.fullName || 'WE DRIVE Chauffeur', rating: Number(d.rating || 0), latitude: d.latitude ?? null, longitude: d.longitude ?? null, verified: d.verified === true }; }); return { ok: true, serviceDate: args.serviceDate, startTime: args.startTime, durationMinutes: args.durationMinutes, location: args.location, requestedLatitude: args.latitude, requestedLongitude: args.longitude, requiredService: args.requiredService, drivers }; }
   if (tool === 'create_job') return createBookingForAI(args);
   if (tool === 'assign_driver') return assignBookingForAI({ bookingId: args.jobId, driverId: args.driverId });
   if (tool === 'send_notification') { if (!new Set(['in_app', 'push', 'whatsapp']).has(args.channel)) fail(400, 'Unsupported notification channel.'); const ref = await db.collection('notifications').add({ userId: args.recipientId, type: 'ai', channel: args.channel, message: args.message, bookingId: args.jobId || null, read: false, source: 'AI_GATEWAY', createdAt: FieldValue.serverTimestamp() }); return { ok: true, notificationId: ref.id }; }
@@ -509,16 +540,20 @@ async function executeWrite(tool, args, actor, key, requestId, response) {
   }
 }
 exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, response) => {
-  const requestId = request.get('x-we-drive-ai-request-id') || crypto.randomUUID();
+  const suppliedRequestId = String(request.get('x-we-drive-ai-request-id') || '').trim();
+  const requestId = /^[A-Za-z0-9._:-]{1,120}$/.test(suppliedRequestId) ? suppliedRequestId : crypto.randomUUID();
   let auditTool = request.body?.tool || null;
   let auditActor = null;
+  securityHeaders(response);
   response.on('finish', () => {
     recordAudit({ requestId, actorId: auditActor, tool: auditTool, status: response.statusCode, outcome: response.statusCode >= 400 ? 'error' : 'success' }).catch((auditError) => console.error('WE DRIVE AI audit logging failed', { requestId, message: auditError.message }));
   });
   try {
     authenticate(request);
     if (request.method !== 'POST') fail(405, 'POST is required.');
-    if (Number(request.get('content-length') || 0) > 1024 * 1024) fail(413, 'Request body is too large.');
+    const contentLength = Number(request.get('content-length') || 0);
+    if (Number.isFinite(contentLength) && contentLength > 64 * 1024) fail(413, 'Request body is too large.');
+    if (request.method === 'POST' && request.is('application/json') === false) fail(415, 'application/json is required.');
     const tool = request.body?.tool;
     auditTool = tool || null;
     if (!ALLOWED_TOOLS.has(tool)) fail(403, 'Tool is not allowed.');
@@ -527,6 +562,7 @@ exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, respons
     // gateway can audit and authorize read operations as well as writes.
     const actor = actorId(request);
     auditActor = actor;
+    enforceRateLimit(request, !READ_ONLY_TOOLS.has(tool));
     if (tool === 'get_approval') {
       const result = await runTool(tool, args, actor);
       response.status(200).json({ ...result, requestId });
