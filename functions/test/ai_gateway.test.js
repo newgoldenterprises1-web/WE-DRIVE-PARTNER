@@ -122,3 +122,19 @@ test('idempotency document is scoped by tool', () => {
 test('idempotency fingerprint changes when arguments change', () => {
   assert.notEqual(argumentsFingerprint('create_job', { customerId: 'a', location: 'A' }), argumentsFingerprint('create_job', { customerId: 'a', location: 'B' }));
 });
+
+test('Development Agent GitHub analysis is allowlisted and read-only', () => {
+  assert.equal(ALLOWED_TOOLS.has('github_analyze'), true);
+  assert.equal(READ_ONLY_TOOLS.has('github_analyze'), true);
+  assert.deepEqual(validateArgs('github_analyze', {
+    repository: 'newgoldenterprises1-web/WE-DRIVE-AI',
+    task: 'inspect CI workflow failures',
+  }), {
+    repository: 'newgoldenterprises1-web/WE-DRIVE-AI',
+    task: 'inspect CI workflow failures',
+  });
+  assert.throws(() => validateArgs('github_analyze', {
+    repository: 'example/unauthorized',
+    task: 'inspect code',
+  }), /repository is required|Repository is not authorized/);
+});
