@@ -190,6 +190,23 @@ async function githubApplyPatch(args) {
   return { ok: true, repository, branch, path, commitSha: payload.commit?.sha || null, writeAccess: true, note: 'Patch applied only to an ai-dev/* branch. Review and merge remain human-controlled.' };
 }
 
+function summarizeWorkflowRuns(workflowRuns) {
+  const runs = Array.isArray(workflowRuns) ? workflowRuns : [];
+  const latestWorkflow = runs[0] || null;
+  const failedWorkflows = runs.filter((run) => (
+    run.conclusion === 'failure' ||
+    run.conclusion === 'timed_out' ||
+    run.conclusion === 'cancelled'
+  ));
+  return {
+    status: latestWorkflow?.status || 'unknown',
+    conclusion: latestWorkflow?.conclusion || 'unknown',
+    latestWorkflow: latestWorkflow?.name || null,
+    failedCount: failedWorkflows.length,
+    attentionRequired: failedWorkflows.length > 0,
+  };
+}
+
 async function githubAnalyze(args) {
   const repository = githubRepository(args.repository);
   const task = text(args.task, 'task', 2000);
@@ -228,15 +245,7 @@ async function githubAnalyze(args) {
     id: run.id, name: run.name, status: run.status, conclusion: run.conclusion,
     headBranch: run.head_branch, headSha: run.head_sha, createdAt: run.created_at, updatedAt: run.updated_at,
   })) : [];
-  const latestWorkflow = workflowRuns[0] || null;
-  const failedWorkflows = workflowRuns.filter((run) => run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'cancelled');
-  const ciSummary = {
-    status: latestWorkflow?.status || 'unknown',
-    conclusion: latestWorkflow?.conclusion || 'unknown',
-    latestWorkflow: latestWorkflow?.name || null,
-    failedCount: failedWorkflows.length,
-    attentionRequired: failedWorkflows.length > 0,
-  };
+  const ciSummary = summarizeWorkflowRuns(workflowRuns);
 
   return {
     ok: true,
@@ -650,4 +659,4 @@ exports.aiGateway = onRequest({ region: 'asia-south1' }, async (request, respons
     response.status(status).json({ ok: false, error: error.message || 'Internal gateway error.', requestId });
   }
 });
-exports._test = { validateArgs, authenticate, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, consumeApproval, executeApprovedAction };
+exports._test = { validateArgs, authenticate, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, consumeApproval, executeApprovedAction, summarizeWorkflowRuns };
