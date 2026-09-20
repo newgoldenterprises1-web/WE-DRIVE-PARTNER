@@ -56,6 +56,7 @@ function validateArgs(tool, args) {
     case 'publish_social_content': return { platform: text(args.platform, 'platform', 40).toLowerCase(), content: text(args.content, 'content', 10000), mediaUrl: optionalText(args.media_url, 2000), scheduledAt: optionalText(args.scheduled_at, 80) };
     case 'send_whatsapp_campaign': return { audience: text(args.audience, 'audience', 5000), message: text(args.message, 'message', 4000), scheduledAt: optionalText(args.scheduled_at, 80) };
     case 'request_approval': return { action: text(args.action, 'action', 100), reason: text(args.reason, 'reason', 1000), metadata: args.metadata && typeof args.metadata === 'object' && !Array.isArray(args.metadata) ? args.metadata : {} };
+    case 'decide_approval': if (typeof args.approved !== 'boolean') fail(400, 'approved must be a boolean.'); return { approvalId: text(args.approval_id, 'approval_id', 160), approved: args.approved, decisionReason: optionalText(args.decision_reason, 1000) || '' };
     case 'get_approval': return { approvalId: text(args.approval_id, 'approval_id', 160) };
     case 'execute_approved_action': return { approvalId: text(args.approval_id, 'approval_id', 160), action: text(args.action, 'action', 100), metadata: args.metadata && typeof args.metadata === 'object' && !Array.isArray(args.metadata) ? args.metadata : {} };
     default: fail(403, 'Tool is not allowed.');
