@@ -118,6 +118,10 @@ service cloud.firestore {
       allow update: if isCustomer()
         && resource.data.customerId == request.auth.uid
         && request.resource.data.customerId == resource.data.customerId
+        && resource.data.status in ['SEARCHING', 'REQUESTED', 'searching', 'requested',
+          'ACCEPTED', 'ARRIVING', 'ARRIVED', 'accepted', 'arriving', 'arrived']
+        && resource.data.bookingStatus in ['SEARCHING', 'REQUESTED', 'searching', 'requested',
+          'ACCEPTED', 'ARRIVING', 'ARRIVED', 'accepted', 'arriving', 'arrived']
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status',
           'bookingStatus',
