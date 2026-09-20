@@ -64,6 +64,7 @@ function validateSafeObject(value, path = 'metadata', depth = 0) {
         error.status = 400;
         throw error;
       }
+      if (key === '__proto__' || key === 'prototype' || key === 'constructor') { const error = new Error('Unsafe metadata key is not permitted.'); error.status = 400; throw error; }
       validateSafeObject(value[key], `${path}.${key}`, depth + 1);
     }
   }
@@ -98,12 +99,14 @@ async function createApproval({ actorId, action, reason, metadata = {} }) {
   assertCriticalAction(action);
   const actor = requireText(actorId, 'actorId');
   const safeMetadata = normalizeExecutionMetadata(metadata);
+  if (safeMetadata.execution.tool !== action) { const error = new Error('Approval action does not match execution tool.'); error.status = 409; throw error; }
+  const cleanReason = requireText(reason, 'reason', 1000);
   const approvalRef = db.collection('aiApprovals').doc();
   await approvalRef.create({
     approvalId: approvalRef.id,
     actorId: actor,
     action,
-    reason: requireText(reason, 'reason', 1000),
+    reason: cleanReason,
     metadata: safeMetadata,
     actionFingerprint: fingerprint(action, safeMetadata),
     status: 'PENDING',
@@ -111,19 +114,42 @@ async function createApproval({ actorId, action, reason, metadata = {} }) {
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
-  recordAudit({ requestId: approvalRef.id, actorId: actor, tool: action, status: 202, outcome: 'approval_requested', metadata: { approvalId: approvalRef.id, action, reason: requireText(reason, 'reason', 1000) } }).catch(() => {});
+  recordAudit({ requestId: approvalRef.id, actorId: actor, tool: action, status: 202, outcome: 'approval_requested', metadata: { approvalId: approvalRef.id, action, reason: cleanReason } }).catch(() => {});
   return { ok: true, approvalId: approvalRef.id, status: 'PENDING' };
 }
 
-async function getApproval(approvalId) {
+async function getApproval(approvalId, requesterId) {
   const id = requireText(approvalId, 'approvalId');
+  const requester = requireText(requesterId, 'requesterId');
   const snap = await db.collection('aiApprovals').doc(id).get();
   if (!snap.exists) {
     const error = new Error('Approval request not found.');
     error.status = 404;
     throw error;
   }
-  return { ok: true, approval: { id: snap.id, ...snap.data() } };
+  const current = snap.data() || {};
+  if (current.actorId !== requester) {
+    const error = new Error('Approval request is not accessible to this actor.');
+    error.status = 403;
+    throw error;
+  }
+  return {
+    ok: true,
+    approval: {
+      id: snap.id,
+      actorId: current.actorId,
+      action: current.action,
+      reason: current.reason || '',
+      status: current.status,
+      expiresAt: current.expiresAt || null,
+      approvedBy: current.approvedBy || null,
+      approvedAt: current.approvedAt || null,
+      decisionReason: current.decisionReason || '',
+      consumedBy: current.consumedBy || null,
+      consumedAt: current.consumedAt || null,
+      metadata: normalizeExecutionMetadata(current.metadata || {}),
+    },
+  };
 }
 
 async function decideApproval({ approvalId, approverId, approved, decisionReason = '' }) {
@@ -176,6 +202,7 @@ async function consumeApproval({ approvalId, actorId, action, metadata = {} }) {
   const actor = requireText(actorId, 'actorId');
   assertCriticalAction(action);
   const safeMetadata = normalizeExecutionMetadata(metadata);
+  if (safeMetadata.execution.tool !== action) { const error = new Error('Approval action does not match execution tool.'); error.status = 409; throw error; }
   const expectedFingerprint = fingerprint(action, safeMetadata);
   const ref = db.collection('aiApprovals').doc(id);
 
