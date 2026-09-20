@@ -9,6 +9,8 @@ const CRITICAL_ACTIONS = new Set([
   'driver_suspend',
   'critical_account_change',
   'production_deploy',
+  'publish_social_content',
+  'send_whatsapp_campaign',
 ]);
 const APPROVAL_TTL_MS = 15 * 60 * 1000;
 
