@@ -6,7 +6,7 @@ const gateway = require('../ai_gateway');
 const approval = require('../ai_approval');
 
 const { validateArgs, ALLOWED_TOOLS, READ_ONLY_TOOLS, idempotencyDocId, argumentsFingerprint, executeApprovedAction } = gateway._test;
-const { normalizeExecutionMetadata, fingerprint, assertExecutionMatchesAction } = approval;
+const { normalizeExecutionMetadata, fingerprint, assertExecutionMatchesAction, approvalDecisionState, approvalConsumptionState } = approval;
 
 test('AI gateway exposes only the approved tool set', () => {
   assert.equal(ALLOWED_TOOLS.has('get_booking'), true);
@@ -208,4 +208,31 @@ test('Development Agent GitHub analysis is allowlisted and read-only', () => {
 
 test('approval decision remains write-only and approval requester cannot self-approve', () => {
   assert.equal(READ_ONLY_TOOLS.has('decide_approval'), false);
+});
+
+
+test('approval decision state enforces four-eyes, pending-only and expiry rules', () => {
+  const now = Date.now();
+  const pending = { actorId: 'requester-1', status: 'PENDING', expiresAt: new Date(now + 60000) };
+  assert.equal(approvalDecisionState(pending, 'approver-1', true, now), 'APPROVED');
+  assert.equal(approvalDecisionState(pending, 'approver-1', false, now), 'REJECTED');
+  assert.throws(() => approvalDecisionState(pending, 'requester-1', true, now), /cannot approve or reject their own request/);
+  assert.throws(() => approvalDecisionState({ ...pending, status: 'APPROVED' }, 'approver-1', true, now), /already been decided/);
+  assert.throws(() => approvalDecisionState({ ...pending, expiresAt: new Date(now - 1) }, 'approver-1', true, now), /expired/);
+});
+
+test('approval consumption state enforces approved-only, actor, fingerprint, expiry and one-time boundaries', () => {
+  const now = Date.now();
+  const current = {
+    actorId: 'requester-1',
+    status: 'APPROVED',
+    actionFingerprint: 'fingerprint-1',
+    expiresAt: new Date(now + 60000),
+  };
+  assert.equal(approvalConsumptionState(current, 'requester-1', 'github_apply_patch', 'fingerprint-1', now), 'CONSUMED');
+  assert.throws(() => approvalConsumptionState({ ...current, status: 'PENDING' }, 'requester-1', 'github_apply_patch', 'fingerprint-1', now), /not approved/);
+  assert.throws(() => approvalConsumptionState(current, 'other-actor', 'github_apply_patch', 'fingerprint-1', now), /does not match execution actor/);
+  assert.throws(() => approvalConsumptionState(current, 'requester-1', 'github_apply_patch', 'different', now), /does not match the requested action or arguments/);
+  assert.throws(() => approvalConsumptionState({ ...current, expiresAt: new Date(now - 1) }, 'requester-1', 'github_apply_patch', 'fingerprint-1', now), /expired/);
+  assert.throws(() => approvalConsumptionState({ ...current, status: 'CONSUMED' }, 'requester-1', 'github_apply_patch', 'fingerprint-1', now), /not approved/);
 });
