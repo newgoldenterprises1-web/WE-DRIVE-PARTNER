@@ -3,14 +3,14 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { getApps, initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue, Timestamp } = require('firebase-admin/firestore');
 const { createBookingForAI, assignBookingForAI } = require('./ai_booking_service');
-const { createApproval, getApproval, consumeApproval, normalizeExecutionMetadata } = require('./ai_approval');
+const { createApproval, getApproval, decideApproval, consumeApproval, normalizeExecutionMetadata } = require('./ai_approval');
 const { recordAudit } = require('./ai_audit');
 const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, completeIdempotentOperation, failIdempotentOperation } = require('./ai_idempotency');
 
 if (!getApps().length) initializeApp();
 const db = getFirestore();
 
-const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'execute_approved_action']);
+const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action']);
 const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_marketing_status', 'create_social_content', 'get_approval']);
 const ARGUMENT_KEYS = {
   list_bookings: ['status', 'limit'],
@@ -26,6 +26,7 @@ const ARGUMENT_KEYS = {
   publish_social_content: ['platform', 'content', 'media_url', 'scheduled_at'],
   send_whatsapp_campaign: ['audience', 'message', 'scheduled_at'],
   request_approval: ['action', 'reason', 'metadata'], get_approval: ['approval_id'],
+  decide_approval: ['approval_id', 'approved', 'decision_reason'],
   execute_approved_action: ['approval_id', 'action', 'metadata'],
 };
 function fail(status, message) { const error = new Error(message); error.status = status; throw error; }
@@ -151,6 +152,7 @@ async function executeApprovedAction(args, actor) {
 async function runTool(tool, args, actor) {
   if (tool === 'request_approval') return createApproval({ actorId: actor, action: args.action, reason: args.reason, metadata: args.metadata });
   if (tool === 'get_approval') return getApproval(args.approvalId);
+  if (tool === 'decide_approval') return decideApproval({ approvalId: args.approvalId, approverId: actor, approved: args.approved, decisionReason: args.decisionReason || '' });
   if (tool === 'execute_approved_action') return executeApprovedAction(args, actor);
   if (tool === 'get_operations_overview') {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
