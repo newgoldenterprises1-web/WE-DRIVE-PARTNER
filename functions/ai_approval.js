@@ -171,8 +171,8 @@ async function decideApproval({ approvalId, approverId, approved, decisionReason
     throw error;
   }
   const approverAllowlist = String(process.env.WE_DRIVE_AI_APPROVER_ALLOWLIST || '').split(',').map((item) => item.trim()).filter(Boolean);
-  if (approverAllowlist.length && !approverAllowlist.includes(approver)) {
-    const error = new Error('Actor is not authorized to decide approvals.');
+  if (!approverAllowlist.length || !approverAllowlist.includes(approver)) {
+    const error = new Error('Approval decision access is not configured for this actor.');
     error.status = 403;
     throw error;
   }
@@ -185,6 +185,11 @@ async function decideApproval({ approvalId, approverId, approved, decisionReason
       throw error;
     }
     const current = snap.data() || {};
+    if (current.actorId === approver) {
+      const error = new Error('Approval requester cannot approve or reject their own request.');
+      error.status = 403;
+      throw error;
+    }
     if (current.status !== 'PENDING') {
       const error = new Error('Approval request has already been decided.');
       error.status = 409;
