@@ -228,6 +228,15 @@ async function githubAnalyze(args) {
     id: run.id, name: run.name, status: run.status, conclusion: run.conclusion,
     headBranch: run.head_branch, headSha: run.head_sha, createdAt: run.created_at, updatedAt: run.updated_at,
   })) : [];
+  const latestWorkflow = workflowRuns[0] || null;
+  const failedWorkflows = workflowRuns.filter((run) => run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'cancelled');
+  const ciSummary = {
+    status: latestWorkflow?.status || 'unknown',
+    conclusion: latestWorkflow?.conclusion || 'unknown',
+    latestWorkflow: latestWorkflow?.name || null,
+    failedCount: failedWorkflows.length,
+    attentionRequired: failedWorkflows.length > 0,
+  };
 
   return {
     ok: true,
@@ -247,6 +256,7 @@ async function githubAnalyze(args) {
       date: commit.commit?.author?.date || null,
     })) : [],
     workflowRuns,
+    ciSummary,
     relevantFiles: files,
     writeAccess: false,
     note: 'Development Agent analysis is read-only. Code changes, branch creation, commits, and deployments require a separate approved workflow.',
