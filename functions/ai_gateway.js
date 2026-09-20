@@ -117,7 +117,7 @@ function githubRepository(value) {
 function githubPatchInput(args) {
   const repository = githubRepository(args.repository);
   const branch = text(args.branch, 'branch', 160);
-  if (!branch.startsWith('ai-dev/') || branch.includes('..') || branch.includes('//') || /[\\s\\u0000-\\u001f]/.test(branch) || branch.endsWith('/')) {
+  if (!branch.startsWith('ai-dev/') || branch.includes('..') || branch.includes('//') || /[\s\u0000-\u001f]/.test(branch) || branch.endsWith('/')) {
     fail(400, 'Development Agent may only write to a safe ai-dev/* branch.');
   }
   const path = text(args.path, 'path', 300);
@@ -128,6 +128,9 @@ function githubPatchInput(args) {
     normalizedPath.startsWith('/') ||
     lowerPath.startsWith('.git/') ||
     lowerPath.includes('/.git/') ||
+    lowerPath === '.env' ||
+    lowerPath === '.env.local' ||
+    lowerPath === '.env.production' ||
     lowerPath.endsWith('/.env') ||
     lowerPath.endsWith('/.env.local') ||
     lowerPath.endsWith('/.env.production') ||
@@ -141,7 +144,7 @@ function githubPatchInput(args) {
   if (/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(content) || /(?:api[_-]?key|secret|password|private[_-]?key)\\s*[:=]\\s*['"]?[A-Za-z0-9_\\-\\+/=]{16,}/i.test(content)) {
     fail(400, 'Development Agent patch contains credential-like material.');
   }
-  const message = text(args.message, 'message', 200).replace(/[\\r\\n]+/g, ' ');
+  const message = text(args.message, 'message', 200).replace(/[\r\n]+/g, ' ');
   const sha = text(args.sha, 'sha', 80);
   if (!/^[0-9a-f]{7,64}$/i.test(sha)) fail(400, 'sha must be a Git blob SHA.');
   return { repository, branch, path: normalizedPath, content, message, sha };
