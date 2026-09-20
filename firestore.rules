@@ -1,13 +1,45 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function isDriver() { return signedIn() && request.auth.token.role == 'driver'; }
-    function isCustomer() { return signedIn() && request.auth.token.role == 'customer'; }
+
+    function appChecked() {
+      return request.app != null;
+    }
+
+    function signedIn() {
+      return appChecked() && request.auth != null;
+    }
+
+    function isCustomer() {
+      return signedIn() && request.auth.token.role == 'customer';
+    }
+
+    function isDriver() {
+      return signedIn() && request.auth.token.role == 'driver';
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.role == 'admin';
+    }
 
     match /partners/{partnerId} {
-      allow read: if signedIn() && (request.auth.uid == partnerId || isCustomer());
-      allow create, update: if isDriver() && request.auth.uid == partnerId;
+      allow read: if isDriver() && request.auth.uid == partnerId;
+      allow create: if false;
+      allow update: if isDriver()
+        && request.auth.uid == partnerId
+        && request.resource.data.uid == partnerId
+        && request.resource.data.role == 'driver'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name',
+          'fullName',
+          'city',
+          'drivingExperience',
+          'bankAccountNo',
+          'ifscCode',
+          'accountHolder',
+          'bankUpdatedTime',
+          'updatedAt'
+        ]);
       allow delete: if false;
 
       match /earnings/{earningId} {
@@ -19,6 +51,12 @@ service cloud.firestore {
         allow read: if isDriver() && request.auth.uid == partnerId;
         allow write: if false;
       }
+    }
+
+    match /partnerPublic/{partnerId} {
+      allow get: if isCustomer() || (isDriver() && request.auth.uid == partnerId);
+      allow list: if false;
+      allow write: if false;
     }
 
     match /users/{userId} {
@@ -33,24 +71,35 @@ service cloud.firestore {
 
     match /bookings/{bookingId} {
       allow get: if signedIn() && (
+        (isCustomer() && resource.data.customerId == request.auth.uid) ||
         (isDriver() && (
           resource.data.partnerId == request.auth.uid ||
-          resource.data.status in ['SEARCHING', 'REQUESTED']
+          resource.data.status in ['SEARCHING', 'REQUESTED', 'searching', 'requested']
         )) ||
-        (isCustomer() && resource.data.customerId == request.auth.uid) ||
-        (!isDriver() && !isCustomer() && resource.data.customerId == request.auth.uid)
+        isAdmin()
       );
-      allow list: if isDriver() || (isCustomer() && resource.data.customerId == request.auth.uid);
 
-      // A customer may create only their own initial booking.
-      // This is intentionally limited to the request/search states so a client
-      // cannot create an already-accepted/completed/cancelled booking.
-      // Driver/backend transitions remain protected by the update rules/Admin SDK.
-      allow create: if signedIn()
+      allow list: if signedIn() && (
+        (isCustomer() && resource.data.customerId == request.auth.uid) ||
+        (isDriver() && (
+          resource.data.partnerId == request.auth.uid ||
+          resource.data.status in ['SEARCHING', 'REQUESTED', 'searching', 'requested']
+        )) ||
+        isAdmin()
+      );
+
+      allow create: if isCustomer()
         && request.resource.data.customerId == request.auth.uid
-        && request.resource.data.status in ['SEARCHING', 'REQUESTED'];
+        && request.resource.data.bookingId == bookingId
+        && request.resource.data.status in ['SEARCHING', 'REQUESTED', 'searching', 'requested']
+        && (!('bookingStatus' in request.resource.data) || request.resource.data.bookingStatus in ['SEARCHING', 'REQUESTED', 'searching', 'requested'])
+        && (!('partnerId' in request.resource.data) || request.resource.data.partnerId == null)
+        && (!('driverId' in request.resource.data) || request.resource.data.driverId == null)
+        && request.resource.data.fare is number
+        && request.resource.data.fare >= 0
+        && request.resource.data.paymentMethod in ['UPI', 'Card', 'Cash']
+        && request.resource.data.paymentStatus in ['pending', 'paid'];
 
-      // Customer can only cancel their own booking. Driver/backend transitions use Admin SDK.
       allow update: if isCustomer()
         && resource.data.customerId == request.auth.uid
         && request.resource.data.customerId == resource.data.customerId
@@ -62,7 +111,46 @@ service cloud.firestore {
           'cancelledBy',
           'cancellationReason'
         ])
-        && request.resource.data.status == 'CANCELLED';
+        && request.resource.data.status == 'cancelled'
+        && request.resource.data.bookingStatus == 'cancelled';
+
+      allow update: if isDriver()
+        && resource.data.partnerId == request.auth.uid
+        && request.resource.data.partnerId == resource.data.partnerId
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'bookingStatus',
+          'updatedAt',
+          'preTripFrontUrl',
+          'preTripBackUrl',
+          'preTripRightUrl',
+          'preTripLeftUrl',
+          'driverSelfieUrl',
+          'postTripFrontUrl',
+          'postTripBackUrl',
+          'postTripRightUrl',
+          'postTripLeftUrl'
+        ])
+        && request.resource.data.status in [
+          'accepted', 'arriving', 'arrived', 'in_progress', 'completed',
+          'ACCEPTED', 'ARRIVING', 'ARRIVED', 'TRIP_STARTED', 'COMPLETED'
+        ];
+
+      allow update: if isAdmin()
+        && request.resource.data.customerId == resource.data.customerId
+        && request.resource.data.bookingId == resource.data.bookingId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'bookingStatus',
+          'updatedAt',
+          'driverId',
+          'partnerId',
+          'driverName',
+          'driverPhone',
+          'vehicle'
+        ]);
+
       allow delete: if false;
     }
 
@@ -78,8 +166,13 @@ service cloud.firestore {
     }
 
     match /profiles/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isCustomer());
+      allow read: if signedIn() && request.auth.uid == userId;
       allow write: if signedIn() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
