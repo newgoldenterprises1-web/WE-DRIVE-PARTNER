@@ -10,7 +10,7 @@ const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, comple
 if (!getApps().length) initializeApp();
 const db = getFirestore();
 
-const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action']);
+const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action']);
 const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_marketing_status', 'create_social_content', 'get_approval']);
 const ARGUMENT_KEYS = {
   list_bookings: ['status', 'limit'],
@@ -66,6 +66,100 @@ function authenticate(request) { const configured = process.env.WE_DRIVE_AI_GATE
 function idempotencyKey(request) { const key = request.get('x-idempotency-key'); if (!key || key.length > 200) fail(400, 'X-Idempotency-Key is required for write operations.'); return key; }
 function actorId(request) { const actor = request.get('x-we-drive-ai-actor-id'); if (!actor || actor.length > 160) fail(400, 'X-WE-DRIVE-AI-Actor-ID is required.'); return actor.trim(); }
 
+
+function githubRepository(value) {
+  const repository = text(value, 'repository', 200);
+  const allowed = new Set([
+    'newgoldenterprises1-web/WE-DRIVE-AI',
+    'newgoldenterprises1-web/WE-DRIVE-PARTNER',
+    'newgoldenterprises1-web/WE-DRIVE-CUSTOMER',
+  ]);
+  if (!allowed.has(repository)) fail(403, 'Repository is not authorized for Development Agent analysis.');
+  return repository;
+}
+
+async function githubGet(path) {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) fail(503, 'GITHUB_TOKEN is not configured.');
+  const result = await fetch(`https://api.github.com/${path.replace(/^\\/+/, '')}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'WE-DRIVE-AI-Development-Agent',
+    },
+  });
+  const payload = await result.json().catch(() => ({}));
+  if (!result.ok) {
+    const error = new Error(payload?.message || `GitHub API request failed with HTTP ${result.status}.`);
+    error.status = result.status >= 400 && result.status < 500 ? 400 : 502;
+    throw error;
+  }
+  return payload;
+}
+
+async function githubAnalyze(args) {
+  const repository = githubRepository(args.repository);
+  const task = text(args.task, 'task', 2000);
+  const repo = await githubGet(`repos/${repository}`);
+  const branch = repo.default_branch || 'main';
+  const [commits, runs, tree] = await Promise.all([
+    githubGet(`repos/${repository}/commits?per_page=8`),
+    githubGet(`repos/${repository}/actions/runs?per_page=8`),
+    githubGet(`repos/${repository}/git/trees/${encodeURIComponent(branch)}?recursive=1`),
+  ]);
+
+  const terms = task.toLowerCase().split(/[^a-z0-9_]+/).filter((term) => term.length >= 4).slice(0, 12);
+  const paths = Array.isArray(tree.tree) ? tree.tree
+    .filter((item) => item.type === 'blob' && typeof item.path === 'string')
+    .map((item) => item.path)
+    .filter((path) => /\\.(py|js|ts|tsx|json|yml|yaml|md)$/i.test(path))
+    .filter((path) => terms.some((term) => path.toLowerCase().includes(term)) ||
+      /^(src\\/|functions\\/|ai-office\\/|\.github\\/)/i.test(path))
+    .slice(0, 12) : [];
+
+  const files = [];
+  for (const path of paths) {
+    try {
+      const file = await githubGet(`repos/${repository}/contents/${path}?ref=${encodeURIComponent(branch)}`);
+      if (file && file.encoding === 'base64' && file.content) {
+        const content = Buffer.from(file.content.replace(/\\s/g, ''), 'base64').toString('utf8');
+        files.push({ path, content: content.slice(0, 12000) });
+      }
+    } catch (error) {
+      files.push({ path, error: error.message });
+    }
+    if (files.length >= 8) break;
+  }
+
+  const workflowRuns = Array.isArray(runs.workflow_runs) ? runs.workflow_runs.slice(0, 8).map((run) => ({
+    id: run.id, name: run.name, status: run.status, conclusion: run.conclusion,
+    headBranch: run.head_branch, headSha: run.head_sha, createdAt: run.created_at, updatedAt: run.updated_at,
+  })) : [];
+
+  return {
+    ok: true,
+    repository,
+    branch,
+    task,
+    repositoryInfo: {
+      private: repo.private === true,
+      defaultBranch: branch,
+      openIssues: repo.open_issues_count || 0,
+      updatedAt: repo.updated_at || null,
+    },
+    recentCommits: Array.isArray(commits) ? commits.slice(0, 8).map((commit) => ({
+      sha: commit.sha,
+      message: String(commit.commit?.message || '').split('\\n')[0].slice(0, 300),
+      author: commit.commit?.author?.name || commit.author?.login || null,
+      date: commit.commit?.author?.date || null,
+    })) : [],
+    workflowRuns,
+    relevantFiles: files,
+    writeAccess: false,
+    note: 'Development Agent analysis is read-only. Code changes, branch creation, commits, and deployments require a separate approved workflow.',
+  };
+}
 
 async function graphPost(path, token, body) {
   if (!token) fail(503, 'Meta/WhatsApp integration is not configured.');
@@ -156,6 +250,7 @@ async function runTool(tool, args, actor) {
   if (tool === 'get_approval') return getApproval(args.approvalId);
   if (tool === 'decide_approval') return decideApproval({ approvalId: args.approvalId, approverId: actor, approved: args.approved, decisionReason: args.decisionReason || '' });
   if (tool === 'execute_approved_action') return executeApprovedAction(args, actor);
+  if (tool === 'github_analyze') return githubAnalyze(args);
   if (tool === 'get_operations_overview') {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     const dayStart = new Date(today + 'T00:00:00+05:30');
