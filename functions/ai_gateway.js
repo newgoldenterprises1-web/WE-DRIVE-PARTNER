@@ -11,7 +11,7 @@ if (!getApps().length) initializeApp();
 const db = getFirestore();
 
 const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'publish_social_content', 'send_whatsapp_campaign', 'request_approval', 'get_approval', 'decide_approval', 'execute_approved_action']);
-const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_marketing_status', 'create_social_content', 'get_approval']);
+const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'github_analyze', 'get_marketing_status', 'create_social_content', 'get_approval']);
 const ARGUMENT_KEYS = {
   list_bookings: ['status', 'limit'],
   list_drivers: ['online', 'limit'],
@@ -20,7 +20,7 @@ const ARGUMENT_KEYS = {
   get_available_drivers: ['service_date', 'start_time', 'location', 'duration_minutes', 'latitude', 'longitude', 'required_service'],
   create_job: ['customer_id', 'service_date', 'start_time', 'location', 'duration_minutes', 'notes'],
   assign_driver: ['job_id', 'driver_id'], send_notification: ['recipient_id', 'channel', 'message', 'job_id'],
-  get_business_report: ['period_start', 'period_end', 'metrics'], get_system_health: [],
+  get_business_report: ['period_start', 'period_end', 'metrics'], get_system_health: [], github_analyze: ['repository', 'task'],
   get_marketing_status: [],
   create_social_content: ['platform', 'content_type', 'topic', 'tone', 'cta', 'media_url'],
   publish_social_content: ['platform', 'content', 'media_url', 'scheduled_at'],
