@@ -126,6 +126,15 @@ test('audit log query is allowlisted, read-only and normalized', () => {
   });
 });
 
+test('approval metadata rejects credential-like fields and excessive nesting', () => {
+  assert.throws(() => normalizeExecutionMetadata({
+    execution: { tool: 'production_deploy', arguments: { api_key: 'should-not-be-here' } }
+  }), /Sensitive credentials are not permitted/);
+  assert.throws(() => normalizeExecutionMetadata({
+    execution: { tool: 'production_deploy', arguments: { nested: { nested: { nested: { nested: { nested: { nested: true } } } } } } }
+  }), /too deeply nested/);
+});
+
 test('get_approval validates approval id', () => {
   const args = validateArgs('get_approval', { approval_id: 'approval-1' });
   assert.deepEqual(args, { approvalId: 'approval-1' });
