@@ -217,6 +217,23 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
 
     const partnerSnap = await db.collection('partners').doc(partnerId).get();
     const partner = partnerSnap.data() || {};
+
+    await db.collection('partnerPublic').doc(partnerId).set({
+      uid: partnerId,
+      name: partner.name || partner.fullName || 'WE DRIVE Chauffeur',
+      phoneNumber: partner.phoneNumber || null,
+      rating: partner.rating ?? null,
+      experienceYears: partner.experienceYears ?? partner.experience ?? null,
+      verified: partner.verified === true,
+      verificationStatus: partner.verificationStatus ?? 'PENDING',
+      vehicleModel: partner.vehicleModel || partner.vehicleType || null,
+      vehicleColor: partner.vehicleColor || null,
+      vehicleNumber: partner.vehicleNumber || partner.registrationNumber || null,
+      latitude: partner.latitude ?? null,
+      longitude: partner.longitude ?? null,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
     const prefs = after.requestPreferences || {};
 
     const driverRating = Number(partner.rating || 5);
