@@ -110,6 +110,22 @@ test('approval fingerprint changes when action or execution arguments change', (
   assert.notEqual(fingerprint('production_deploy', base), fingerprint('large_financial_action', base));
 });
 
+test('audit log query is allowlisted, read-only and normalized', () => {
+  assert.equal(ALLOWED_TOOLS.has('get_audit_logs'), true);
+  assert.equal(READ_ONLY_TOOLS.has('get_audit_logs'), true);
+  assert.deepEqual(validateArgs('get_audit_logs', {
+    limit: 25,
+    actor_id: 'admin-1',
+    tool: 'publish_social_content',
+    outcome: 'approval_consumed',
+  }), {
+    limit: 25,
+    actorId: 'admin-1',
+    tool: 'publish_social_content',
+    outcome: 'approval_consumed',
+  });
+});
+
 test('get_approval validates approval id', () => {
   const args = validateArgs('get_approval', { approval_id: 'approval-1' });
   assert.deepEqual(args, { approvalId: 'approval-1' });
