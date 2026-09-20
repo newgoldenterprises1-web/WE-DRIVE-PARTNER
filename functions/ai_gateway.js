@@ -213,7 +213,39 @@ async function runTool(tool, args, actor) {
   if (tool === 'create_job') return createBookingForAI(args);
   if (tool === 'assign_driver') return assignBookingForAI({ bookingId: args.jobId, driverId: args.driverId });
   if (tool === 'send_notification') { if (!new Set(['in_app', 'push', 'whatsapp']).has(args.channel)) fail(400, 'Unsupported notification channel.'); const ref = await db.collection('notifications').add({ userId: args.recipientId, type: 'ai', channel: args.channel, message: args.message, bookingId: args.jobId || null, read: false, source: 'AI_GATEWAY', createdAt: FieldValue.serverTimestamp() }); return { ok: true, notificationId: ref.id }; }
-  if (tool === 'get_business_report') { const snap = await db.collection('bookings').where('bookingDate', '>=', args.periodStart).where('bookingDate', '<=', args.periodEnd).limit(500).get(); const bookings = snap.docs.map((doc) => doc.data() || {}); const completed = bookings.filter((b) => String(b.status || '').toUpperCase() === 'COMPLETED').length; const cancelled = bookings.filter((b) => String(b.status || '').toUpperCase().includes('CANCEL')).length; const requested = bookings.length; const revenue = bookings.reduce((sum, b) => sum + Math.max(0, Number(b.fare || 0)), 0); return { ok: true, periodStart: args.periodStart, periodEnd: args.periodEnd, metrics: { bookings: requested, completed, cancelled, pending: Math.max(0, requested - completed - cancelled), grossFare: revenue } }; }
+  if (tool === 'get_business_report') {
+    const periodStart = text(args.periodStart, 'period_start', 40);
+    const periodEnd = text(args.periodEnd, 'period_end', 40);
+    const snap = await db.collection('bookings')
+      .where('bookingDate', '>=', periodStart)
+      .where('bookingDate', '<=', periodEnd)
+      .limit(500)
+      .get();
+    const bookings = snap.docs.map((doc) => doc.data() || {});
+    const status = (b) => String(b.status || '').trim().toUpperCase();
+    const completed = bookings.filter((b) => status(b) === 'COMPLETED' || status(b) === 'COMPLETE').length;
+    const cancelled = bookings.filter((b) => status(b) === 'CANCELLED' || status(b) === 'CANCELED').length;
+    const activeStatuses = new Set(['ACCEPTED', 'ASSIGNED', 'DRIVER_ASSIGNED', 'EN_ROUTE', 'STARTED', 'IN_PROGRESS', 'ONGOING', 'ARRIVED']);
+    const pendingStatuses = new Set(['PENDING', 'REQUESTED', 'SEARCHING', 'UNASSIGNED', 'PENDING_ASSIGNMENT', 'AWAITING_DRIVER']);
+    const active = bookings.filter((b) => activeStatuses.has(status(b))).length;
+    const pending = bookings.filter((b) => pendingStatuses.has(status(b))).length;
+    const requested = bookings.length;
+    const revenue = bookings.reduce((sum, b) => sum + Math.max(0, Number(b.fare || 0)), 0);
+    return {
+      ok: true,
+      periodStart,
+      periodEnd,
+      metrics: {
+        bookings: requested,
+        completed,
+        cancelled,
+        pending,
+        active,
+        grossFare: revenue,
+        averageFare: requested ? revenue / requested : 0,
+      },
+    };
+  }
   fail(403, 'Tool is not allowed.');
 }
 async function executeWrite(tool, args, actor, key, requestId, response) {
