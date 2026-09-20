@@ -34,7 +34,7 @@ function normalizeIndianPhone(phoneNumber) {
 }
 
 exports.ensureDriverAccount = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireAuth(request);
     const user = await auth.getUser(uid);
@@ -85,7 +85,7 @@ exports.ensureDriverAccount = onCall(
 );
 
 exports.setDriverPresence = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireDriver(request);
     const online = Boolean(request.data?.online);
@@ -119,7 +119,7 @@ exports.setDriverPresence = onCall(
 );
 
 exports.updateDriverLocation = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireDriver(request);
     const latitude = Number(request.data?.latitude);
@@ -159,7 +159,7 @@ exports.updateDriverLocation = onCall(
 );
 
 exports.acceptBooking = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireDriver(request);
     const bookingId = String(request.data?.bookingId || '').trim();
@@ -210,7 +210,7 @@ exports.acceptBooking = onCall(
 );
 
 exports.declineBooking = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireDriver(request);
     const bookingId = String(request.data?.bookingId || '').trim();
@@ -249,7 +249,7 @@ exports.declineBooking = onCall(
 );
 
 exports.transitionBooking = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireDriver(request);
     const bookingId = String(request.data?.bookingId || '').trim();
