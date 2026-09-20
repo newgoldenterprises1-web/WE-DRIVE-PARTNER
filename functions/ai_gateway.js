@@ -309,7 +309,7 @@ async function getAuditLogs(args, actor) {
 async function runTool(tool, args, actor) {
   if (tool === 'get_audit_logs') return getAuditLogs(args, actor);
   if (tool === 'request_approval') return createApproval({ actorId: actor, action: args.action, reason: args.reason, metadata: args.metadata });
-  if (tool === 'get_approval') return getApproval(args.approvalId);
+  if (tool === 'get_approval') return getApproval(args.approvalId, actor);
   if (tool === 'decide_approval') return decideApproval({ approvalId: args.approvalId, approverId: actor, approved: args.approved, decisionReason: args.decisionReason || '' });
   if (tool === 'execute_approved_action') return executeApprovedAction(args, actor);
   if (tool === 'github_analyze') return githubAnalyze(args);
