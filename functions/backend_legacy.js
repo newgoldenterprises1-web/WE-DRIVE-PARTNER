@@ -40,12 +40,28 @@ exports.ensureDriverAccount = onCall(
     const user = await auth.getUser(uid);
     const requestedName = String(request.data?.name || '').trim();
     const phone = user.phoneNumber || normalizeIndianPhone(request.data?.phoneNumber);
-    const name = requestedName || user.displayName || 'WE DRIVE Partner';
 
     const partnerRef = db.collection('partners').doc(uid);
     const partnerSnap = await partnerRef.get();
     const existing = partnerSnap.data() || {};
     const existingClaims = user.customClaims || {};
+
+    // A normal signed-in user must not be able to promote themselves to driver.
+    // Existing approved driver accounts may refresh their profile/token.
+    const alreadyApprovedDriver =
+      existingClaims.role === 'driver' ||
+      existing.role === 'driver' ||
+      existing.driverApproved === true ||
+      existing.onboardingStatus === 'APPROVED';
+
+    if (!alreadyApprovedDriver) {
+      throw new HttpsError(
+        'permission-denied',
+        'Partner account is pending WE DRIVE approval.',
+      );
+    }
+
+    const name = requestedName || user.displayName || existing.name || 'WE DRIVE Partner';
 
     await auth.setCustomUserClaims(uid, {
       ...existingClaims,
@@ -58,7 +74,7 @@ exports.ensureDriverAccount = onCall(
       phoneNumber: phone,
       name,
       fullName: name,
-      onboardingStatus: existing.onboardingStatus || 'ACTIVE',
+      onboardingStatus: existing.onboardingStatus || 'APPROVED',
       updatedAt: FieldValue.serverTimestamp(),
     };
 
