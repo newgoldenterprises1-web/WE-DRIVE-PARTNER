@@ -1,21 +1,4 @@
-con\n\ntest('Development Agent blocks unsafe branches, protected paths and credential-like patch content', () => {
-  assert.throws(() => validateArgs('github_apply_patch', {
-    repository: 'newgoldenterprises1-web/WE-DRIVE-AI', branch: 'ai-dev/../main',
-    path: 'src/example.py', content: 'print("ok")', message: 'unsafe', sha: 'abc1234'
-  }), /safe ai-dev/);
-  assert.throws(() => validateArgs('github_apply_patch', {
-    repository: 'newgoldenterprises1-web/WE-DRIVE-AI', branch: 'ai-dev/security',
-    path: '.env.production', content: 'print("ok")', message: 'unsafe', sha: 'abc1234'
-  }), /protected or secret-bearing/);
-  assert.throws(() => validateArgs('github_apply_patch', {
-    repository: 'newgoldenterprises1-web/WE-DRIVE-AI', branch: 'ai-dev/security',
-    path: 'src/key.py', content: '-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----', message: 'unsafe', sha: 'abc1234'
-  }), /credential-like/);
-  assert.throws(() => validateArgs('github_apply_patch', {
-    repository: 'newgoldenterprises1-web/WE-DRIVE-AI', branch: 'ai-dev/security',
-    path: 'src/example.py', content: 'print("ok")', message: 'unsafe', sha: 'not-a-sha'
-  }), /Git blob SHA/);
-});st test = require('node:test');
+const test = require('node:test');
 const assert = require('node:assert/strict');
 
 process.env.WE_DRIVE_AI_GATEWAY_TOKEN = 'test-token';
@@ -252,4 +235,23 @@ test('approval consumption state enforces approved-only, actor, fingerprint, exp
   assert.throws(() => approvalConsumptionState(current, 'requester-1', 'github_apply_patch', 'different', now), /does not match the requested action or arguments/);
   assert.throws(() => approvalConsumptionState({ ...current, expiresAt: new Date(now - 1) }, 'requester-1', 'github_apply_patch', 'fingerprint-1', now), /expired/);
   assert.throws(() => approvalConsumptionState({ ...current, status: 'CONSUMED' }, 'requester-1', 'github_apply_patch', 'fingerprint-1', now), /not approved/);
+});
+
+test('Development Agent blocks unsafe branches, protected paths and credential-like patch content', () => {
+  assert.throws(() => validateArgs('github_apply_patch', {
+    repository: 'newgoldenterprises1-web/WE-DRIVE-AI', branch: 'ai-dev/../main',
+    path: 'src/example.py', content: 'print("ok")', message: 'unsafe', sha: 'abc1234'
+  }), /safe ai-dev/);
+  assert.throws(() => validateArgs('github_apply_patch', {
+    repository: 'newgoldenterprises1-web/WE-DRIVE-AI', branch: 'ai-dev/security',
+    path: '.env.production', content: 'print("ok")', message: 'unsafe', sha: 'abc1234'
+  }), /protected or secret-bearing/);
+  assert.throws(() => validateArgs('github_apply_patch', {
+    repository: 'newgoldenterprises1-web/WE-DRIVE-AI', branch: 'ai-dev/security',
+    path: 'src/key.py', content: '-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----', message: 'unsafe', sha: 'abc1234'
+  }), /credential-like/);
+  assert.throws(() => validateArgs('github_apply_patch', {
+    repository: 'newgoldenterprises1-web/WE-DRIVE-AI', branch: 'ai-dev/security',
+    path: 'src/example.py', content: 'print("ok")', message: 'unsafe', sha: 'not-a-sha'
+  }), /Git blob SHA/);
 });
