@@ -114,9 +114,9 @@ async function githubAnalyze(args) {
   const paths = Array.isArray(tree.tree) ? tree.tree
     .filter((item) => item.type === 'blob' && typeof item.path === 'string')
     .map((item) => item.path)
-    .filter((path) => /\\.(py|js|ts|tsx|json|yml|yaml|md)$/i.test(path))
+    .filter((path) => ['.py', '.js', '.ts', '.tsx', '.json', '.yml', '.yaml', '.md'].some((ext) => path.toLowerCase().endsWith(ext)))
     .filter((path) => terms.some((term) => path.toLowerCase().includes(term)) ||
-      /^(src\\/|functions\\/|ai-office\\/|\.github\\/)/i.test(path))
+      path.startsWith('src/') || path.startsWith('functions/') || path.startsWith('ai-office/') || path.startsWith('.github/'))
     .slice(0, 12) : [];
 
   const files = [];
@@ -124,7 +124,7 @@ async function githubAnalyze(args) {
     try {
       const file = await githubGet(`repos/${repository}/contents/${path}?ref=${encodeURIComponent(branch)}`);
       if (file && file.encoding === 'base64' && file.content) {
-        const content = Buffer.from(file.content.replace(/\\s/g, ''), 'base64').toString('utf8');
+        const content = Buffer.from(file.content.replace(/\s/g, ''), 'base64').toString('utf8');
         files.push({ path, content: content.slice(0, 12000) });
       }
     } catch (error) {
@@ -151,7 +151,7 @@ async function githubAnalyze(args) {
     },
     recentCommits: Array.isArray(commits) ? commits.slice(0, 8).map((commit) => ({
       sha: commit.sha,
-      message: String(commit.commit?.message || '').split('\\n')[0].slice(0, 300),
+      message: String(commit.commit?.message || '').split('\n')[0].slice(0, 300),
       author: commit.commit?.author?.name || commit.author?.login || null,
       date: commit.commit?.author?.date || null,
     })) : [],
