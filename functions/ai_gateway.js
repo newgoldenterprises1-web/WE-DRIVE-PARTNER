@@ -82,7 +82,7 @@ function githubRepository(value) {
 async function githubGet(path) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) fail(503, 'GITHUB_TOKEN is not configured.');
-  const result = await fetch(`https://api.github.com/${path.replace(/^\\/+/, '')}`, {
+  const result = await fetch(`https://api.github.com/${path.replace(/^\/+/, '')}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
       'Accept': 'application/vnd.github+json',
