@@ -71,7 +71,7 @@ async function graphPost(path, token, body) {
   if (!token) fail(503, 'Meta/WhatsApp integration is not configured.');
   const version = process.env.META_GRAPH_VERSION;
   if (!version) fail(503, 'META_GRAPH_VERSION is not configured.');
-  const url = `https://graph.facebook.com/${version}/${path.replace(/^\\//, '')}`;
+  const url = `https://graph.facebook.com/${version}/${path.replace(/^\/+/, '')}`;
   const result = await fetch(url, {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -111,12 +111,13 @@ async function sendApprovedWhatsAppCampaign(args) {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   if (!phoneNumberId) fail(503, 'WHATSAPP_PHONE_NUMBER_ID is not configured.');
+  if (!token) fail(503, 'WHATSAPP_ACCESS_TOKEN is not configured.');
   const recipients = args.audience.split(',').map((value) => value.trim()).filter(Boolean);
   if (!recipients.length) fail(400, 'WhatsApp audience must contain at least one recipient.');
   if (recipients.length > 100) fail(400, 'WhatsApp campaign is limited to 100 recipients per approved execution.');
   const results = [];
   for (const to of recipients) {
-    if (!/^\\+[1-9]\\d{7,14}$/.test(to)) fail(400, 'WhatsApp recipients must use E.164 format.');
+    if (!/^\+[1-9]\d{7,14}$/.test(to)) fail(400, 'WhatsApp recipients must use E.164 format.');
     results.push(await graphPost(`${phoneNumberId}/messages`, token, {
       messaging_product: 'whatsapp',
       to,
@@ -308,7 +309,23 @@ async function runTool(tool, args, actor) {
     return { ok: true, onlineOnly, drivers };
   }
   if (tool === 'get_booking') { const snap = await db.collection('bookings').doc(args.bookingId).get(); if (!snap.exists) fail(404, 'Booking not found.'); return { ok: true, booking: { id: snap.id, ...snap.data() } }; }
-  if (tool === 'get_customer') { const [u, p] = await Promise.all([db.collection('users').doc(args.customerId).get(), db.collection('profiles').doc(args.customerId).get()]); if (!u.exists && !p.exists) fail(404, 'Customer not found.'); return { ok: true, customer: { id: args.customerId, ...(u.data() || {}), ...(p.data() || {}) } }; }
+  if (tool === 'get_customer') {
+    const [u, p] = await Promise.all([db.collection('users').doc(args.customerId).get(), db.collection('profiles').doc(args.customerId).get()]);
+    if (!u.exists && !p.exists) fail(404, 'Customer not found.');
+    const user = u.data() || {}, profile = p.data() || {};
+    const rawPhone = user.phoneNumber || profile.phoneNumber || user.phone || profile.phone || '';
+    const phone = String(rawPhone || '');
+    const maskedPhone = phone ? (phone.length > 4 ? `${phone.slice(0, 2)}******${phone.slice(-2)}` : '****') : null;
+    return { ok: true, customer: {
+      id: args.customerId,
+      name: user.name || user.fullName || profile.name || profile.fullName || null,
+      email: user.email || profile.email || null,
+      phone: maskedPhone,
+      city: user.city || profile.city || null,
+      status: user.status || profile.status || null,
+      createdAt: user.createdAt || profile.createdAt || null,
+    } };
+  }
   if (tool === 'get_driver_status') { const snap = await db.collection('partners').doc(args.driverId).get(); if (!snap.exists) fail(404, 'Driver not found.'); const d = snap.data() || {}; return { ok: true, driver: { id: snap.id, online: d.online === true, lastSeenAt: d.lastSeenAt || null, latitude: d.latitude ?? null, longitude: d.longitude ?? null } }; }
   if (tool === 'get_available_drivers') { const snap = await db.collection('partners').where('online', '==', true).limit(50).get(); const drivers = snap.docs.map((doc) => { const d = doc.data() || {}; return { id: doc.id, name: d.name || d.fullName || 'WE DRIVE Chauffeur', phoneNumber: d.phoneNumber || null, rating: Number(d.rating || 0), latitude: d.latitude ?? null, longitude: d.longitude ?? null, verified: d.verified === true }; }); return { ok: true, serviceDate: args.serviceDate, startTime: args.startTime, durationMinutes: args.durationMinutes, location: args.location, requestedLatitude: args.latitude, requestedLongitude: args.longitude, requiredService: args.requiredService, drivers }; }
   if (tool === 'create_job') return createBookingForAI(args);
