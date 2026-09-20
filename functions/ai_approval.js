@@ -95,11 +95,20 @@ function normalizeExecutionMetadata(metadata = {}) {
   };
 }
 
+function assertExecutionMatchesAction(action, metadata) {
+  const safeMetadata = normalizeExecutionMetadata(metadata);
+  if (safeMetadata.execution.tool !== action) {
+    const error = new Error('Approval action does not match execution tool.');
+    error.status = 409;
+    throw error;
+  }
+  return safeMetadata;
+}
+
 async function createApproval({ actorId, action, reason, metadata = {} }) {
   assertCriticalAction(action);
   const actor = requireText(actorId, 'actorId');
-  const safeMetadata = normalizeExecutionMetadata(metadata);
-  if (safeMetadata.execution.tool !== action) { const error = new Error('Approval action does not match execution tool.'); error.status = 409; throw error; }
+  const safeMetadata = assertExecutionMatchesAction(action, metadata);
   const cleanReason = requireText(reason, 'reason', 1000);
   const approvalRef = db.collection('aiApprovals').doc();
   await approvalRef.create({
@@ -201,8 +210,7 @@ async function consumeApproval({ approvalId, actorId, action, metadata = {} }) {
   const id = requireText(approvalId, 'approvalId');
   const actor = requireText(actorId, 'actorId');
   assertCriticalAction(action);
-  const safeMetadata = normalizeExecutionMetadata(metadata);
-  if (safeMetadata.execution.tool !== action) { const error = new Error('Approval action does not match execution tool.'); error.status = 409; throw error; }
+  const safeMetadata = assertExecutionMatchesAction(action, metadata);
   const expectedFingerprint = fingerprint(action, safeMetadata);
   const ref = db.collection('aiApprovals').doc(id);
 
@@ -258,5 +266,6 @@ module.exports = {
   consumeApproval,
   fingerprint,
   normalizeExecutionMetadata,
+  assertExecutionMatchesAction,
   APPROVAL_TTL_MS,
 };
