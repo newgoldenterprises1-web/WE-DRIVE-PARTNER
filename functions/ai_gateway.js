@@ -10,10 +10,11 @@ const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, comple
 if (!getApps().length) initializeApp();
 const db = getFirestore();
 
-const ALLOWED_TOOLS = new Set(['list_bookings', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'request_approval', 'get_approval', 'execute_approved_action']);
-const READ_ONLY_TOOLS = new Set(['list_bookings', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_approval']);
+const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'request_approval', 'get_approval', 'execute_approved_action']);
+const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_approval']);
 const ARGUMENT_KEYS = {
   list_bookings: ['status', 'limit'],
+  list_drivers: ['online', 'limit'],
   get_booking: ['booking_id'], get_customer: ['customer_id'], get_driver_status: ['driver_id'],
   get_available_drivers: ['service_date', 'start_time', 'location', 'duration_minutes', 'latitude', 'longitude', 'required_service'],
   create_job: ['customer_id', 'service_date', 'start_time', 'location', 'duration_minutes', 'notes'],
@@ -157,6 +158,28 @@ async function runTool(tool, args, actor) {
       .filter(b => !args.status || b.status === args.status)
       .sort((a,b) => String(b.id).localeCompare(String(a.id)));
     return { ok: true, date: today, bookings };
+  }
+  if (tool === 'list_drivers') {
+    const limit = Math.min(Math.max(Number(args.limit || 50), 1), 100);
+    const onlineOnly = args.online !== false;
+    const query = db.collection('partners');
+    const snap = onlineOnly
+      ? await query.where('online', '==', true).limit(limit).get()
+      : await query.limit(limit).get();
+    const drivers = snap.docs.map((doc) => {
+      const d = doc.data() || {};
+      return {
+        id: doc.id,
+        name: d.name || d.fullName || 'WE DRIVE Chauffeur',
+        online: d.online === true,
+        verified: d.verified === true || d.verificationStatus === 'VERIFIED',
+        rating: Number(d.rating || 0),
+        lastSeenAt: d.lastSeenAt || null,
+        latitude: d.latitude ?? null,
+        longitude: d.longitude ?? null,
+      };
+    });
+    return { ok: true, onlineOnly, drivers };
   }
   if (tool === 'get_booking') { const snap = await db.collection('bookings').doc(args.bookingId).get(); if (!snap.exists) fail(404, 'Booking not found.'); return { ok: true, booking: { id: snap.id, ...snap.data() } }; }
   if (tool === 'get_customer') { const [u, p] = await Promise.all([db.collection('users').doc(args.customerId).get(), db.collection('profiles').doc(args.customerId).get()]); if (!u.exists && !p.exists) fail(404, 'Customer not found.'); return { ok: true, customer: { id: args.customerId, ...(u.data() || {}), ...(p.data() || {}) } }; }
