@@ -36,8 +36,43 @@ function assertCriticalAction(action) {
   }
 }
 
+function validateSafeObject(value, path = 'metadata', depth = 0) {
+  if (depth > 5) {
+    const error = new Error('Approval metadata is too deeply nested.');
+    error.status = 400;
+    throw error;
+  }
+  if (Array.isArray(value)) {
+    if (value.length > 100) {
+      const error = new Error('Approval metadata array is too large.');
+      error.status = 400;
+      throw error;
+    }
+    value.forEach((item, index) => validateSafeObject(item, `${path}[${index}]`, depth + 1));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (keys.length > 100) {
+      const error = new Error('Approval metadata contains too many fields.');
+      error.status = 400;
+      throw error;
+    }
+    for (const key of keys) {
+      if (/token|secret|password|authorization|api.?key|private.?key/i.test(key)) {
+        const error = new Error('Sensitive credentials are not permitted in approval metadata.');
+        error.status = 400;
+        throw error;
+      }
+      validateSafeObject(value[key], `${path}.${key}`, depth + 1);
+    }
+  }
+}
+
 function normalizeExecutionMetadata(metadata = {}) {
   const safeMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+  validateSafeObject(safeMetadata);
+  if (JSON.stringify(safeMetadata).length > 30000) { const error = new Error('Approval metadata is too large.'); error.status = 400; throw error; }
   const execution = safeMetadata.execution;
   if (!execution || typeof execution !== 'object' || Array.isArray(execution)) {
     const error = new Error('metadata.execution is required for critical approval.');
