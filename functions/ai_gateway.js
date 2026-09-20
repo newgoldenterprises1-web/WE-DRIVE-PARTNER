@@ -10,9 +10,10 @@ const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, comple
 if (!getApps().length) initializeApp();
 const db = getFirestore();
 
-const ALLOWED_TOOLS = new Set(['get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'request_approval', 'get_approval', 'execute_approved_action']);
-const READ_ONLY_TOOLS = new Set(['get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_approval']);
+const ALLOWED_TOOLS = new Set(['list_bookings', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'request_approval', 'get_approval', 'execute_approved_action']);
+const READ_ONLY_TOOLS = new Set(['list_bookings', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_approval']);
 const ARGUMENT_KEYS = {
+  list_bookings: ['status', 'limit'],
   get_booking: ['booking_id'], get_customer: ['customer_id'], get_driver_status: ['driver_id'],
   get_available_drivers: ['service_date', 'start_time', 'location', 'duration_minutes', 'latitude', 'longitude', 'required_service'],
   create_job: ['customer_id', 'service_date', 'start_time', 'location', 'duration_minutes', 'notes'],
@@ -32,6 +33,7 @@ function validateArgs(tool, args) {
   const allowed = new Set(ARGUMENT_KEYS[tool] || []); const unknown = Object.keys(args).filter((key) => !allowed.has(key));
   if (unknown.length) fail(400, `Unknown argument(s): ${unknown.join(', ')}.`);
   switch (tool) {
+    case 'list_bookings': return { status: optionalText(args.status, 40)?.toUpperCase() || null, limit: Math.min(Math.max(Number(args.limit || 50), 1), 100) };
     case 'get_booking': return { bookingId: text(args.booking_id, 'booking_id', 160) };
     case 'get_customer': return { customerId: text(args.customer_id, 'customer_id', 160) };
     case 'get_driver_status': return { driverId: text(args.driver_id, 'driver_id', 160) };
@@ -131,6 +133,30 @@ async function runTool(tool, args, actor) {
         alerts: pendingJobs + cancelledJobs,
       },
     };
+  }
+  if (tool === 'list_bookings') {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const dayStart = new Date(today + 'T00:00:00+05:30');
+    const snap = await db.collection('bookings').where('createdAt', '>=', Timestamp.fromDate(dayStart)).limit(args.limit).get();
+    const normalize = (v) => String(v || '').trim().toUpperCase();
+    const bookings = snap.docs
+      .map(doc => {
+        const b = doc.data() || {};
+        return {
+          id: doc.id,
+          status: normalize(b.status) || 'UNKNOWN',
+          customerId: b.customerId || b.userId || null,
+          driverId: b.driverId || b.partnerId || null,
+          pickupLocation: b.pickupLocation || b.location || null,
+          bookingDate: b.bookingDate || null,
+          startTime: b.startTime || null,
+          fare: Number(b.fare || 0),
+          createdAt: b.createdAt || null,
+        };
+      })
+      .filter(b => !args.status || b.status === args.status)
+      .sort((a,b) => String(b.id).localeCompare(String(a.id)));
+    return { ok: true, date: today, bookings };
   }
   if (tool === 'get_booking') { const snap = await db.collection('bookings').doc(args.bookingId).get(); if (!snap.exists) fail(404, 'Booking not found.'); return { ok: true, booking: { id: snap.id, ...snap.data() } }; }
   if (tool === 'get_customer') { const [u, p] = await Promise.all([db.collection('users').doc(args.customerId).get(), db.collection('profiles').doc(args.customerId).get()]); if (!u.exists && !p.exists) fail(404, 'Customer not found.'); return { ok: true, customer: { id: args.customerId, ...(u.data() || {}), ...(p.data() || {}) } }; }
