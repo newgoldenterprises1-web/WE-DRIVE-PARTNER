@@ -64,7 +64,7 @@ test('Development Agent patch tool is allowlisted but not read-only', () => {
     path: 'src/example.py',
     content: 'print("ok")',
     message: 'test patch',
-    sha: 'abc123',
+    sha: 'abc1234',
   });
   assert.equal(args.branch, 'ai-dev/security-hardening');
   assert.equal(args.path, 'src/example.py');
