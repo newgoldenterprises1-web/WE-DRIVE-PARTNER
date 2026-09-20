@@ -204,3 +204,8 @@ test('Development Agent GitHub analysis is allowlisted and read-only', () => {
     task: 'inspect code',
   }), /repository is required|Repository is not authorized/);
 });
+
+
+test('approval decision remains write-only and approval requester cannot self-approve', () => {
+  assert.equal(READ_ONLY_TOOLS.has('decide_approval'), false);
+});
