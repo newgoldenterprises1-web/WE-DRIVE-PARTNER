@@ -52,6 +52,7 @@ const ARGUMENT_KEYS = {
   create_job: ['customer_id', 'service_date', 'start_time', 'location', 'duration_minutes', 'notes'],
   assign_driver: ['job_id', 'driver_id'], send_notification: ['recipient_id', 'channel', 'message', 'job_id'],
   get_business_report: ['period_start', 'period_end', 'metrics'], get_system_health: [], github_analyze: ['repository', 'task'],
+  github_apply_patch: ['repository', 'branch', 'path', 'content', 'message', 'sha'],
   get_marketing_status: [],
   create_social_content: ['platform', 'content_type', 'topic', 'tone', 'cta', 'media_url'],
   publish_social_content: ['platform', 'content', 'media_url', 'scheduled_at'],
