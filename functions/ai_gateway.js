@@ -10,11 +10,12 @@ const { idempotencyDocId, argumentsFingerprint, beginIdempotentOperation, comple
 if (!getApps().length) initializeApp();
 const db = getFirestore();
 
-const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'request_approval', 'get_approval', 'execute_approved_action']);
+const ALLOWED_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_operations_overview', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'create_job', 'assign_driver', 'send_notification', 'get_business_report', 'get_system_health', 'request_approval', 'get_approval', 'execute_approved_action']);
 const READ_ONLY_TOOLS = new Set(['list_bookings', 'list_drivers', 'get_booking', 'get_available_drivers', 'get_driver_status', 'get_customer', 'get_business_report', 'get_system_health', 'get_approval']);
 const ARGUMENT_KEYS = {
   list_bookings: ['status', 'limit'],
   list_drivers: ['online', 'limit'],
+  get_operations_overview: ['limit'],
   get_booking: ['booking_id'], get_customer: ['customer_id'], get_driver_status: ['driver_id'],
   get_available_drivers: ['service_date', 'start_time', 'location', 'duration_minutes', 'latitude', 'longitude', 'required_service'],
   create_job: ['customer_id', 'service_date', 'start_time', 'location', 'duration_minutes', 'notes'],
@@ -79,6 +80,29 @@ async function runTool(tool, args, actor) {
   if (tool === 'request_approval') return createApproval({ actorId: actor, action: args.action, reason: args.reason, metadata: args.metadata });
   if (tool === 'get_approval') return getApproval(args.approvalId);
   if (tool === 'execute_approved_action') return executeApprovedAction(args, actor);
+  if (tool === 'get_operations_overview') {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+    const dayStart = new Date(today + 'T00:00:00+05:30');
+    const limit = Math.min(Math.max(Number(args.limit || 100), 1), 100);
+    const snap = await db.collection('bookings').where('createdAt', '>=', Timestamp.fromDate(dayStart)).limit(limit).get();
+    const normalize = (v) => String(v || '').trim().toUpperCase();
+    const activeStatuses = new Set(['ACCEPTED', 'ASSIGNED', 'DRIVER_ASSIGNED', 'EN_ROUTE', 'STARTED', 'IN_PROGRESS', 'ONGOING', 'ARRIVED']);
+    const pendingStatuses = new Set(['PENDING', 'REQUESTED', 'SEARCHING', 'UNASSIGNED', 'PENDING_ASSIGNMENT', 'AWAITING_DRIVER']);
+    const completedStatuses = new Set(['COMPLETED', 'COMPLETE']);
+    const cancelledStatuses = new Set(['CANCELLED', 'CANCELED']);
+    let activeJobs = 0, pendingJobs = 0, completedJobs = 0, cancelledJobs = 0;
+    const active = [], pending = [], alerts = [];
+    for (const doc of snap.docs) {
+      const b = doc.data() || {};
+      const status = normalize(b.status);
+      const item = { id: doc.id, status: status || 'UNKNOWN', driverId: b.driverId || b.partnerId || null, pickupLocation: b.pickupLocation || b.location || null, fare: Number(b.fare || 0) };
+      if (activeStatuses.has(status)) { activeJobs += 1; active.push(item); }
+      else if (pendingStatuses.has(status)) { pendingJobs += 1; pending.push(item); alerts.push({ id: doc.id, status, reason: 'Pending or unassigned job needs attention.' }); }
+      else if (completedStatuses.has(status)) completedJobs += 1;
+      else if (cancelledStatuses.has(status)) { cancelledJobs += 1; alerts.push({ id: doc.id, status, reason: 'Cancelled job recorded today.' }); }
+    }
+    return { ok: true, date: today, summary: { activeJobs, pendingJobs, completedJobs, cancelledJobs, alerts: alerts.length }, activeJobs: active.slice(0, 50), pendingJobs: pending.slice(0, 50), alerts: alerts.slice(0, 50) };
+  }
   if (tool === 'get_system_health') {
     const today = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Kolkata',
