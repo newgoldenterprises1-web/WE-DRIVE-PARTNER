@@ -57,7 +57,7 @@ function chauffeurLevel(score, trips) {
 }
 
 exports.ensureCustomerAccount = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireAuth(request);
     const user = await auth.getUser(uid);
@@ -82,7 +82,7 @@ exports.ensureCustomerAccount = onCall(
 );
 
 exports.createCustomerBooking = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireCustomer(request);
     const input = request.data || {};
@@ -167,7 +167,7 @@ exports.createCustomerBooking = onCall(
 );
 
 exports.cancelCustomerBooking = onCall(
-  { region: 'asia-south1' },
+  { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
     const uid = requireCustomer(request);
     const bookingId = optionalString(request.data?.bookingId, 160);
