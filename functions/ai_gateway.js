@@ -304,6 +304,7 @@ async function executeApprovedAction(args, actor) {
   const executors = Object.freeze({
     publish_social_content: publishApprovedSocialContent,
     send_whatsapp_campaign: sendApprovedWhatsAppCampaign,
+    github_apply_patch: githubApplyPatch,
   });
   const executor = executors[args.action];
   if (typeof executor !== 'function') {
