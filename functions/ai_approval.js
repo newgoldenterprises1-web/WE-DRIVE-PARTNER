@@ -215,7 +215,7 @@ async function consumeApproval({ approvalId, actorId, action, metadata = {} }) {
   const expectedFingerprint = fingerprint(action, safeMetadata);
   const ref = db.collection('aiApprovals').doc(id);
 
-  await db.runTransaction(async (tx) => {
+  const executionArguments = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) {
       const error = new Error('Approval request not found.');
@@ -253,10 +253,11 @@ async function consumeApproval({ approvalId, actorId, action, metadata = {} }) {
       consumedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    return current.metadata.execution.arguments;
   });
 
   recordAudit({ requestId: id, actorId: actor, tool: action, status: 200, outcome: 'approval_consumed', metadata: { approvalId: id, action } }).catch(() => {});
-  return { ok: true, approvalId: id, status: 'CONSUMED' };
+  return { ok: true, approvalId: id, status: 'CONSUMED', executionArguments };
 }
 
 module.exports = {
