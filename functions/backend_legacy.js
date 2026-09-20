@@ -86,21 +86,7 @@ exports.ensureDriverAccount = onCall(
 
     await partnerRef.set(profile, { merge: true });
 
-    await db.collection('partnerPublic').doc(uid).set({
-      uid,
-      name,
-      phoneNumber: phone,
-      rating: existing.rating ?? null,
-      experienceYears: existing.experienceYears ?? existing.experience ?? null,
-      verified: existing.verified === true,
-      verificationStatus: existing.verificationStatus ?? 'PENDING',
-      vehicleModel: existing.vehicleModel ?? existing.vehicleType ?? null,
-      vehicleColor: existing.vehicleColor ?? null,
-      vehicleNumber: existing.vehicleNumber ?? existing.registrationNumber ?? null,
-      latitude: existing.latitude ?? null,
-      longitude: existing.longitude ?? null,
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
+
 
     await db.collection('profiles').doc(uid).set(
       {
@@ -187,23 +173,29 @@ exports.updateDriverLocation = onCall(
       { merge: true },
     );
 
-    const partner = partnerSnap.data() || {};
-    await db.collection('partnerPublic').doc(uid).set({
-      uid,
-      name: partner.name || partner.fullName || 'WE DRIVE Chauffeur',
-      phoneNumber: partner.phoneNumber || null,
-      rating: partner.rating ?? null,
-      experienceYears: partner.experienceYears ?? partner.experience ?? null,
-      verified: partner.verified === true,
-      verificationStatus: partner.verificationStatus ?? 'PENDING',
-      vehicleModel: partner.vehicleModel ?? partner.vehicleType ?? null,
-      vehicleColor: partner.vehicleColor ?? null,
-      vehicleNumber: partner.vehicleNumber ?? partner.registrationNumber ?? null,
-      latitude,
-      longitude,
-      locationUpdatedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
+    // Keep live location scoped to the driver's assigned bookings.
+    const activeBookings = await db.collection('bookings')
+      .where('partnerId', '==', uid)
+      .where('status', 'in', ['ACCEPTED', 'ARRIVING', 'ARRIVED', 'TRIP_STARTED'])
+      .limit(20)
+      .get();
+
+    const batch = db.batch();
+    activeBookings.docs.forEach((bookingDoc) => {
+      batch.set(bookingDoc.ref, {
+        chauffeurLatitude: latitude,
+        chauffeurLongitude: longitude,
+        chauffeurLocationAccuracy: Math.max(0, Number(request.data?.accuracy || 0)),
+        chauffeurHeading: Number(request.data?.heading || 0),
+        chauffeurSpeed: Math.max(0, Number(request.data?.speed || 0)),
+        chauffeurLocationUpdatedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+
+    if (!activeBookings.empty) {
+      await batch.commit();
+    }
 
     return { ok: true };
   },
