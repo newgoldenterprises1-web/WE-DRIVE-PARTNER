@@ -52,16 +52,35 @@ exports.ensureDriverAccount = onCall(
       existingClaims.role === 'driver' ||
       existing.role === 'driver' ||
       existing.driverApproved === true ||
-      existing.onboardingStatus === 'APPROVED';
+      existing.onboardingStatus === 'APPROVED' ||
+      existing.verificationStatus === 'VERIFIED';
 
-    if (!alreadyApprovedDriver) {
+    const isRegistration = String(request.data?.mode || '').toLowerCase() === 'register';
+    const name = requestedName || user.displayName || existing.name || 'WE DRIVE Partner';
+
+    if (!alreadyApprovedDriver && !isRegistration) {
       throw new HttpsError(
         'permission-denied',
         'Partner account is pending WE DRIVE approval.',
       );
     }
 
-    const name = requestedName || user.displayName || existing.name || 'WE DRIVE Partner';
+    if (!alreadyApprovedDriver && isRegistration) {
+      await partnerRef.set({
+        uid,
+        role: 'partner_candidate',
+        phoneNumber: phone,
+        name,
+        fullName: name,
+        onboardingStatus: existing.onboardingStatus || 'PENDING_PAYMENT',
+        verificationStatus: existing.verificationStatus || 'PENDING',
+        registrationFeePaid: existing.registrationFeePaid === true,
+        online: false,
+        updatedAt: FieldValue.serverTimestamp(),
+        createdAt: existing.createdAt || FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return { ok: true, uid, role: 'partner_candidate', pendingApproval: true };
+    }
 
     await auth.setCustomUserClaims(uid, {
       ...existingClaims,
@@ -74,7 +93,8 @@ exports.ensureDriverAccount = onCall(
       phoneNumber: phone,
       name,
       fullName: name,
-      onboardingStatus: existing.onboardingStatus || 'APPROVED',
+      onboardingStatus: 'APPROVED',
+      verificationStatus: 'VERIFIED',
       updatedAt: FieldValue.serverTimestamp(),
     };
 
@@ -115,6 +135,17 @@ exports.setDriverPresence = onCall(
     }
 
     const existing = snap.data() || {};
+    if (online) {
+      const verification = String(existing.verificationStatus || existing.onboardingStatus || '').toUpperCase();
+      const approved = verification === 'VERIFIED' || verification === 'APPROVED' || existing.driverApproved === true;
+      if (!approved) {
+        throw new HttpsError('failed-precondition', 'Your documents must be approved before you can go online.');
+      }
+      if (existing.registrationFeePaid !== true) {
+        throw new HttpsError('failed-precondition', 'Complete partner registration payment before going online.');
+      }
+    }
+
     const update = {
       role: 'driver',
       online,
@@ -338,6 +369,9 @@ exports.transitionBooking = onCall(
       if (nextStatus === 'ARRIVED') update.arrivedAt = FieldValue.serverTimestamp();
 
       if (nextStatus === 'TRIP_STARTED') {
+        if (data.tripStartOtpVerified !== true) {
+          throw new HttpsError('failed-precondition', 'Verify the customer 4-digit start OTP before starting the trip.');
+        }
         const required = ['preTripFrontUrl', 'preTripBackUrl', 'preTripRightUrl', 'preTripLeftUrl', 'driverSelfieUrl'];
         if (required.some((field) => typeof request.data?.[field] !== 'string' || !request.data[field].trim())) {
           throw new HttpsError('invalid-argument', 'All pre-trip inspection photos are required.');
@@ -415,5 +449,92 @@ exports.onBookingWritten = onDocumentWritten(
         createdAt: FieldValue.serverTimestamp(),
       });
     }
+  },
+);
+
+
+exports.verifyTripStartOtp = onCall(
+  { region: 'asia-south1', enforceAppCheck: true },
+  async (request) => {
+    const uid = requireDriver(request);
+    const bookingId = String(request.data?.bookingId || '').trim();
+    const otp = String(request.data?.otp || '').trim();
+    if (!bookingId || !/^\d{4}$/.test(otp)) {
+      throw new HttpsError('invalid-argument', 'Booking ID and a valid 4-digit OTP are required.');
+    }
+
+    const ref = db.collection('bookings').doc(bookingId);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError('not-found', 'Booking not found.');
+
+    const data = snap.data() || {};
+    if (String(data.partnerId || '') !== uid) {
+      throw new HttpsError('permission-denied', 'This booking is not assigned to you.');
+    }
+    if (String(data.status || '').toUpperCase() !== 'ARRIVED') {
+      throw new HttpsError('failed-precondition', 'Trip OTP can only be verified after arrival.');
+    }
+    if (String(data.otp || '') !== otp) {
+      throw new HttpsError('permission-denied', 'Incorrect trip start OTP.');
+    }
+
+    await ref.set({
+      tripStartOtpVerified: true,
+      tripStartOtpVerifiedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { ok: true, bookingId, verified: true };
+  },
+);
+
+exports.registerDriverFcmToken = onCall(
+  { region: 'asia-south1', enforceAppCheck: true },
+  async (request) => {
+    const uid = requireAuth(request);
+    const token = String(request.data?.token || '').trim();
+    if (!token) throw new HttpsError('invalid-argument', 'FCM token is required.');
+
+    const partnerRef = db.collection('partners').doc(uid);
+    const snap = await partnerRef.get();
+    if (!snap.exists) throw new HttpsError('failed-precondition', 'Partner account is not initialized.');
+
+    await partnerRef.set({
+      pushTokens: FieldValue.arrayUnion(token),
+      pushTokenUpdatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    return { ok: true };
+  },
+);
+
+exports.approvePartner = onCall(
+  { region: 'asia-south1', enforceAppCheck: true },
+  async (request) => {
+    const adminUid = request.auth?.uid;
+    if (!adminUid || request.auth?.token?.role !== 'admin') {
+      throw new HttpsError('permission-denied', 'Admin access is required.');
+    }
+
+    const partnerId = String(request.data?.partnerId || '').trim();
+    if (!partnerId) throw new HttpsError('invalid-argument', 'Partner ID is required.');
+
+    const partnerRef = db.collection('partners').doc(partnerId);
+    const snap = await partnerRef.get();
+    if (!snap.exists) throw new HttpsError('not-found', 'Partner account not found.');
+
+    await partnerRef.set({
+      role: 'driver',
+      driverApproved: true,
+      verificationStatus: 'VERIFIED',
+      onboardingStatus: 'APPROVED',
+      online: false,
+      approvedAt: FieldValue.serverTimestamp(),
+      approvedBy: adminUid,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    await auth.setCustomUserClaims(partnerId, { ...(await auth.getUser(partnerId)).customClaims, role: 'driver' });
+    return { ok: true, partnerId, status: 'VERIFIED' };
   },
 );

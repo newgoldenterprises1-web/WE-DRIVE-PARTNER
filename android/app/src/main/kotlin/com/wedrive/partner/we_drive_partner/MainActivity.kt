@@ -1,5 +1,10 @@
 package com.wedrive.partner.we_drive_partner
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.media.AudioAttributes
+import android.media.RingtoneManager
+import android.os.Build
 import android.content.Intent
 import android.net.Uri
 import io.flutter.embedding.android.FlutterActivity
@@ -7,6 +12,21 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                "wedrive_booking_high",
+                "WeDrive247 Booking Requests",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Urgent incoming chauffeur booking requests"
+                enableVibration(true)
+                setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build())
+            }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
     companion object {
         private const val CHANNEL = "we_drive/maps"
         private const val GOOGLE_MAPS_PACKAGE = "com.google.android.apps.maps"

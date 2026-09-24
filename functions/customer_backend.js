@@ -1,8 +1,10 @@
+const { randomInt } = require('crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { getApps, initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { notifyAvailableDrivers } = require('./notification_service');
 
 if (!getApps().length) initializeApp();
 
@@ -94,7 +96,14 @@ exports.createCustomerBooking = onCall(
     }
 
     const fare = Math.max(0, Number(input.fare || 0));
-    if (!Number.isFinite(fare)) throw new HttpsError('invalid-argument', 'Invalid fare.');
+    if (!Number.isFinite(fare) || fare <= 0) throw new HttpsError('invalid-argument', 'Invalid fare.');
+
+    const paymentMethod = String(input.paymentMethod || 'Cash').trim();
+    if (!['UPI', 'Card', 'Cash'].includes(paymentMethod)) {
+      throw new HttpsError('invalid-argument', 'Unsupported payment method.');
+    }
+    const requiresPayment = paymentMethod !== 'Cash';
+    const initialStatus = requiresPayment ? 'PAYMENT_PENDING' : 'REQUESTED';
 
     const userSnap = await db.collection('users').doc(uid).get();
     const userData = userSnap.data() || {};
@@ -122,10 +131,10 @@ exports.createCustomerBooking = onCall(
       selectedHours: input.selectedHours == null ? null : Number(input.selectedHours),
       fare,
       currency: 'INR',
-      paymentMethod: 'Cash',
+      paymentMethod,
       paymentStatus: 'pending',
-      status: 'REQUESTED',
-      bookingStatus: 'REQUESTED',
+      status: initialStatus,
+      bookingStatus: initialStatus,
       partnerId: null,
       driverId: null,
       driverName: null,
@@ -156,13 +165,22 @@ exports.createCustomerBooking = onCall(
         recurringBooking: preferences.recurringBooking == null ? null : preferences.recurringBooking,
       },
       signatureMatchRequested: true,
-      matchStatus: 'WAITING',
+      matchStatus: requiresPayment ? 'PAYMENT_REQUIRED' : 'WAITING',
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     };
 
     await bookingRef.set(data);
-    return { ok: true, bookingId: bookingRef.id, status: 'REQUESTED' };
+
+    if (!requiresPayment) {
+      await notifyAvailableDrivers({
+        bookingId: bookingRef.id,
+        title: 'New chauffeur booking',
+        message: 'A customer booking is available. Open WE DRIVE Partner to respond.',
+      });
+    }
+
+    return { ok: true, bookingId: bookingRef.id, status: initialStatus, paymentRequired: requiresPayment };
   },
 );
 
@@ -259,7 +277,7 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
       number: partner.vehicleNumber || partner.registrationNumber || null,
     };
 
-    const otp = String(Math.floor(1000 + Math.random() * 9000));
+    const otp = String(randomInt(1000, 10000));
     await event.data.after.ref.set({
       driverId: partnerId,
       driverName: partner.name || partner.fullName || 'WE DRIVE Chauffeur',

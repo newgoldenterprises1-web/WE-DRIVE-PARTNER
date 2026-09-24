@@ -1,7 +1,11 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
+import '../auth/payment_screen.dart';
 
 class VerificationScreen extends StatefulWidget {
   const VerificationScreen({super.key});
@@ -12,6 +16,8 @@ class VerificationScreen extends StatefulWidget {
 
 class _VerificationScreenState extends State<VerificationScreen> {
   bool isProcessing = false;
+  String? uploadingDocument;
+  final ImagePicker _picker = ImagePicker();
   bool isPaid = false;
   String verificationStatus = 'PENDING';
   String dlStatus = 'Pending';
@@ -34,8 +40,8 @@ class _VerificationScreenState extends State<VerificationScreen> {
           setState(() {
             isPaid = data['registrationFeePaid'] ?? false;
             verificationStatus = data['verificationStatus'] ?? 'PENDING';
-            dlStatus = data['dlStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
-            idStatus = data['idStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
+            dlStatus = data['licenseDocumentStatus'] ?? data['dlStatus'] ?? (isPaid ? 'Pending' : 'Payment Required');
+            idStatus = data['governmentIdDocumentStatus'] ?? data['governmentIdDocumentStatus'] ?? data['governmentIdStatus'] ?? data['idStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
           });
         }
       }
@@ -44,159 +50,60 @@ class _VerificationScreenState extends State<VerificationScreen> {
     }
   }
 
-  Future<void> _processRegistrationFeePayment() async {
-    setState(() {
-      isProcessing = true;
-    });
-
-    // Simulate UPI / PhonePe Payment Gateway Intent
-    await Future.delayed(const Duration(seconds: 2));
-
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await FirebaseFirestore.instance.collection('partners').doc(user.uid).set({
-          'registrationFeePaid': true,
-          'feePaidAt': FieldValue.serverTimestamp(),
-          'registrationAmount': 399,
-          'verificationStatus': 'UNDER_REVIEW',
-          'dlStatus': 'Pending Review',
-          'idStatus': 'Pending Review',
-        }, SetOptions(merge: true));
-      }
-
-      setState(() {
-        isProcessing = false;
-        isPaid = true;
-        verificationStatus = 'UNDER_REVIEW';
-        dlStatus = 'Pending Review';
-        idStatus = 'Pending Review';
-      });
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('₹399 Payment Successful! Documents submitted for review.'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      setState(() {
-        isProcessing = false;
-      });
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Payment failed: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
 
   void _showPaymentSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (context) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 24, 20, MediaQuery.of(context).viewInsets.bottom + 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.navy.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.payment_rounded, color: AppColors.navy, size: 24),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Partner Registration Fee',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.navy),
-                      ),
-                      SizedBox(height: 2),
-                      Text('Activation & Verification charges', style: TextStyle(color: AppColors.muted, fontSize: 12)),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Divider(height: 1),
-            ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF7F9FC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('One-Time Exchange / Setup Fee', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.navy)),
-                  Text('₹399', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.navy)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Select UPI App (PhonePe / GPay / Paytm)',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.muted),
-            ),
-            const SizedBox(height: 10),
-            ListTile(
-              tileColor: Colors.grey.shade50,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              leading: const Icon(Icons.phone_android_rounded, color: AppColors.navy),
-              title: const Text('UPI Payment Intent', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              trailing: const Icon(Icons.check_circle, color: Colors.green),
-              onTap: () {},
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.navy,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
-              ),
-              onPressed: () {
-                Navigator.pop(context);
-                _processRegistrationFeePayment();
-              },
-              child: const Text('PAY ₹399 & SUBMIT', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
-            ),
-          ],
-        ),
-      ),
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PaymentScreen()),
     );
   }
 
-  Widget document(String title, String status, IconData icon) {
-    final bool isAdded = status == 'Added' || status == 'Approved';
-    final bool isPending = status == 'Pending Review';
+
+  Future<void> _uploadDocument(String type) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      setState(() => uploadingDocument = type);
+      final image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image == null) return;
+
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('verification')
+          .child(user.uid)
+          .child(type + '.jpg');
+
+      await ref.putFile(File(image.path));
+      final url = await ref.getDownloadURL();
+
+      final fieldPrefix = type == 'driving_license' ? 'license' : 'governmentId';
+      await FirebaseFirestore.instance.collection('partners').doc(user.uid).set({
+        fieldPrefix + 'DocumentUrl': url,
+        fieldPrefix + 'DocumentStatus': 'SUBMITTED',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await _fetchVerificationStatus();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(type == 'driving_license' ? 'Driving Licence submitted for review.' : 'Government ID submitted for review.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Document upload failed: ' + e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => uploadingDocument = null);
+    }
+  }
+
+  Widget document(String title, String status, IconData icon, String type) {
+    final bool isAdded = status == 'Added' || status == 'Approved' || status == 'SUBMITTED';
+    final bool isPending = status == 'Pending Review' || status == 'SUBMITTED';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -215,13 +122,17 @@ class _VerificationScreenState extends State<VerificationScreen> {
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
-                  color: AppColors.navy,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: AppColors.navy),
               ),
             ),
+            if (uploadingDocument == type)
+              const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
+            else if (status == 'Pending' || status == 'Pending Review' || status == 'REUPLOAD_REQUIRED' || status == 'Payment Required')
+              IconButton(
+                tooltip: 'Upload',
+                onPressed: () => _uploadDocument(type),
+                icon: const Icon(Icons.upload_file_rounded, color: AppColors.navy),
+              ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
@@ -250,6 +161,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
       ),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -283,8 +195,8 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 Expanded(
                   child: Text(
                     isPaid
-                        ? 'FEE PAID (₹399) — Your account is under verification.'
-                        : 'PAY REGISTRATION FEE — Complete ₹399 payment to submit documents.',
+                        ? 'FEE PAID (₹299) — Your account is under verification.'
+                        : 'PAY REGISTRATION FEE — Complete ₹299 payment to submit documents.',
                     style: const TextStyle(
                       color: AppColors.navy,
                       fontWeight: FontWeight.w800,
@@ -312,7 +224,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 onPressed: isProcessing ? null : () => _showPaymentSheet(context),
                 child: isProcessing
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('PAY REGISTRATION FEE (₹399)', style: TextStyle(fontWeight: FontWeight.w900)),
+                    : const Text('PAY REGISTRATION FEE (₹299)', style: TextStyle(fontWeight: FontWeight.w900)),
               ),
             ),
             const SizedBox(height: 18),
@@ -332,16 +244,19 @@ class _VerificationScreenState extends State<VerificationScreen> {
             'Driving Licence',
             dlStatus,
             Icons.badge_outlined,
+            'driving_license',
           ),
           document(
             'Government ID (Aadhaar / PAN)',
             idStatus,
             Icons.perm_identity_rounded,
+            'government_id',
           ),
           document(
             'Profile Photo',
             selfieStatus,
             Icons.photo_camera_outlined,
+            'profile_photo',
           ),
         ],
       ),

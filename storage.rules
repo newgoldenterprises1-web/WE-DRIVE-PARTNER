@@ -9,6 +9,15 @@ service firebase.storage {
         && firestore.get(/databases/(default)/documents/bookings/$(bookingId)).data.partnerId == request.auth.uid;
     }
 
+    match /verification/{uid}/{fileName} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if false;
+    }
+
     match /inspections/{uid}/{bookingId}/{folder}/{fileName} {
       allow read: if ownsBooking(uid, bookingId);
       allow create, update: if ownsBooking(uid, bookingId)
