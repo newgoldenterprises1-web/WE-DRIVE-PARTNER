@@ -25,10 +25,11 @@ service cloud.firestore {
     match /partners/{partnerId} {
       allow read: if signedIn() && request.auth.uid == partnerId;
       allow create: if false;
-      allow update: if isDriver()
+      allow update: if signedIn()
         && request.auth.uid == partnerId
         && request.resource.data.uid == partnerId
-        && request.resource.data.role == 'driver'
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.role in ['driver', 'partner_candidate']
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name',
           'fullName',
