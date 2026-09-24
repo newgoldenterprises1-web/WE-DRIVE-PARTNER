@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../../services/payout_service.dart';
 import '../../theme/app_theme.dart';
 
 class EarningsScreen extends StatefulWidget {
@@ -12,6 +14,8 @@ class EarningsScreen extends StatefulWidget {
 
 class _EarningsScreenState extends State<EarningsScreen> {
   String payoutFrequency = 'weekly';
+  bool updatingFrequency = false;
+  bool withdrawing = false;
 
   Widget metric(String title, String value, IconData icon) {
     return AppCard(
@@ -73,20 +77,43 @@ class _EarningsScreenState extends State<EarningsScreen> {
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
-  void _selectFrequency(String value) {
-    setState(() => payoutFrequency = value);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Payout preference selected: ${value[0].toUpperCase()}${value.substring(1)}')),
-    );
+  Future<void> _selectFrequency(String value) async {
+    if (updatingFrequency) return;
+    setState(() => updatingFrequency = true);
+    try {
+      final frequency = await PayoutService.instance.setFrequency(value);
+      if (!mounted) return;
+      setState(() => payoutFrequency = frequency);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Payout preference updated to ${frequency[0].toUpperCase()}${frequency.substring(1)}')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => updatingFrequency = false);
+    }
   }
 
-  void _withdraw() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Bank withdrawal will be enabled after RazorpayX KYC is completed.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  Future<void> _withdraw() async {
+    if (withdrawing) return;
+    setState(() => withdrawing = true);
+    try {
+      final result = await PayoutService.instance.withdraw();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message']?.toString() ?? 'Payout request submitted.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) setState(() => withdrawing = false);
+    }
   }
 
   @override
@@ -158,8 +185,10 @@ class _EarningsScreenState extends State<EarningsScreen> {
                               SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton.icon(
-                                  onPressed: _withdraw,
-                                  icon: const Icon(Icons.account_balance_rounded),
+                                  onPressed: withdrawing ? null : _withdraw,
+                                  icon: withdrawing
+                                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.navyDark))
+                                      : const Icon(Icons.account_balance_rounded),
                                   label: const Text('WITHDRAW NOW', style: TextStyle(fontWeight: FontWeight.w900)),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppColors.gold,
