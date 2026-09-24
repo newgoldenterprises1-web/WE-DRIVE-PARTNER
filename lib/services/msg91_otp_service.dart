@@ -84,6 +84,7 @@ class Msg91OtpService {
     required String requestId,
     required String otp,
     required String phoneNumber,
+    bool registration = false,
   }) async {
     final cleanOtp = otp.trim();
     if (!RegExp(r'^\d{6}$').hasMatch(cleanOtp)) throw StateError('Please enter the 6-digit OTP sent by SMS.');
@@ -95,7 +96,7 @@ class Msg91OtpService {
       final result = await _auth.signInWithCredential(credential);
       final user = result.user;
       if (user == null) throw StateError('Firebase sign-in did not create a user session.');
-      await _driverAccount.ensureDriverAccount();
+      await _driverAccount.ensureDriverAccount(registration: registration);
       return {'success': true, 'uid': user.uid, 'phoneNumber': user.phoneNumber ?? _phoneNumber ?? phoneNumber, 'channel': 'sms'};
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
