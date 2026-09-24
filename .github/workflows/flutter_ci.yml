@@ -1,4 +1,5 @@
 name: WeDrive247 Partner CI
+# Full Flutter + Functions validation for every release PR.
 
 on:
   push:
