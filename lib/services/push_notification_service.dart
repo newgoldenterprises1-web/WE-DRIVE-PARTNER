@@ -10,7 +10,7 @@ class PushNotificationService {
   static final PushNotificationService instance = PushNotificationService._();
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final CloudFunctions _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
   bool _initialized = false;
 
   Future<void> initialize() async {
