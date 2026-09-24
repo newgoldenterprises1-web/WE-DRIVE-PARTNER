@@ -121,6 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 requestId: id,
                 otp: otp,
                 phoneNumber: phone,
+                registration: isSignUp,
               );
 
               if (!mounted) return;
