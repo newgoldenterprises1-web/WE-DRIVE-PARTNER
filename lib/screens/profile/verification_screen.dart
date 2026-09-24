@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 
@@ -16,7 +19,9 @@ class _VerificationScreenState extends State<VerificationScreen> {
   String verificationStatus = 'PENDING';
   String dlStatus = 'Pending';
   String idStatus = 'Pending';
-  String selfieStatus = 'Added';
+  String selfieStatus = 'Pending';
+  final ImagePicker _imagePicker = ImagePicker();
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(region: 'asia-south1');
 
   @override
   void initState() {
@@ -36,6 +41,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
             verificationStatus = data['verificationStatus'] ?? 'PENDING';
             dlStatus = data['dlStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
             idStatus = data['idStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
+            selfieStatus = data['selfieStatus'] ?? 'Pending';
           });
         }
       }
@@ -94,6 +100,81 @@ class _VerificationScreenState extends State<VerificationScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _uploadDocument(String type, ImageSource source) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please sign in again.')),
+      );
+      return;
+    }
+
+    try {
+      final image = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 86,
+        maxWidth: 2200,
+      );
+      if (image == null) return;
+
+      setState(() => isProcessing = true);
+
+      final fileName = type + '.jpg';
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('verification')
+          .child(user.uid)
+          .child(fileName);
+
+      await storageRef.putData(
+        await image.readAsBytes(),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+
+      final url = await storageRef.getDownloadURL();
+
+      await _functions.httpsCallable('submitVerificationDocument').call({
+        'type': type,
+        'url': url,
+      });
+
+      await _fetchVerificationStatus();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            type == 'license'
+                ? 'Driving Licence submitted.'
+                : type == 'id'
+                    ? 'Government ID submitted.'
+                    : 'Profile photo submitted.',
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: ' + e.toString()),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isProcessing = false);
+    }
+  }
+
+  Future<void> _handleDocumentTap(String type) async {
+    final source = type == 'selfie'
+        ? ImageSource.camera
+        : ImageSource.gallery;
+    await _uploadDocument(type, source);
   }
 
   void _showPaymentSheet(BuildContext context) {
@@ -194,14 +275,17 @@ class _VerificationScreenState extends State<VerificationScreen> {
     );
   }
 
-  Widget document(String title, String status, IconData icon) {
+  Widget document(String title, String status, IconData icon, VoidCallback onTap) {
     final bool isAdded = status == 'Added' || status == 'Approved';
     final bool isPending = status == 'Pending Review';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: AppCard(
-        child: Row(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: AppCard(
+          child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
@@ -332,16 +416,19 @@ class _VerificationScreenState extends State<VerificationScreen> {
             'Driving Licence',
             dlStatus,
             Icons.badge_outlined,
+            () => _handleDocumentTap('license'),
           ),
           document(
             'Government ID (Aadhaar / PAN)',
             idStatus,
             Icons.perm_identity_rounded,
+            () => _handleDocumentTap('id'),
           ),
           document(
             'Profile Photo',
             selfieStatus,
             Icons.photo_camera_outlined,
+            () => _handleDocumentTap('selfie'),
           ),
         ],
       ),
