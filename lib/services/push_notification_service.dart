@@ -14,35 +14,33 @@ class PushNotificationService {
   bool _initialized = false;
 
   Future<void> initialize() async {
-    if (_initialized) return;
-    _initialized = true;
+    if (!_initialized) {
+      _initialized = true;
 
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-    await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-      announcement: false,
-      carPlay: false,
-      criticalAlert: false,
-      provisional: false,
-    );
+      await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        announcement: false,
+        carPlay: false,
+        criticalAlert: false,
+        provisional: false,
+      );
 
-    _messaging.onTokenRefresh.listen((token) async {
-      await _register(token);
-    });
+      _messaging.onTokenRefresh.listen((token) async {
+        await _register(token);
+      });
 
-    FirebaseMessaging.onMessage.listen((message) async {
-      // Android background notifications are rendered by FCM on the
-      // high-importance booking channel. Foreground alerts need an explicit
-      // cue because FCM does not display notification messages automatically
-      // while the app is visible.
-      try {
-        await SystemSound.play(SystemSoundType.alert);
-        await HapticFeedback.heavyImpact();
-      } catch (_) {}
-    });
+      FirebaseMessaging.onMessage.listen((message) async {
+        try {
+          await SystemSound.play(SystemSoundType.alert);
+          await HapticFeedback.heavyImpact();
+        } catch (_) {}
+      });
+    }
+
     await _registerCurrentToken();
   }
 
