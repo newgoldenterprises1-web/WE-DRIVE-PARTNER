@@ -33,6 +33,21 @@ function normalizeIndianPhone(phoneNumber) {
   return `+91${local}`;
 }
 
+function isApprovedDriverProfile(data = {}) {
+  return (
+    data.driverApproved === true ||
+    data.onboardingStatus === 'APPROVED' ||
+    data.verificationStatus === 'VERIFIED' ||
+    data.verificationStatus === 'APPROVED'
+  );
+}
+
+function requireApprovedDriver(data) {
+  if (!isApprovedDriverProfile(data)) {
+    throw new HttpsError('failed-precondition', 'Partner account is pending approval.');
+  }
+}
+
 exports.ensureDriverAccount = onCall(
   { region: 'asia-south1', enforceAppCheck: true },
   async (request) => {
@@ -46,8 +61,6 @@ exports.ensureDriverAccount = onCall(
     const existing = partnerSnap.data() || {};
     const existingClaims = user.customClaims || {};
 
-    // A normal signed-in user must not be able to promote themselves to driver.
-    // Existing approved driver accounts may refresh their profile/token.
     const alreadyApprovedDriver =
       existingClaims.role === 'driver' ||
       existing.role === 'driver' ||
@@ -55,10 +68,7 @@ exports.ensureDriverAccount = onCall(
       existing.onboardingStatus === 'APPROVED';
 
     if (!alreadyApprovedDriver) {
-      throw new HttpsError(
-        'permission-denied',
-        'Partner account is pending WE DRIVE approval.',
-      );
+      throw new HttpsError('permission-denied', 'Partner account is pending WE DRIVE approval.');
     }
 
     const name = requestedName || user.displayName || existing.name || 'WE DRIVE Partner';
@@ -85,8 +95,6 @@ exports.ensureDriverAccount = onCall(
     }
 
     await partnerRef.set(profile, { merge: true });
-
-
 
     await db.collection('profiles').doc(uid).set(
       {
@@ -115,6 +123,10 @@ exports.setDriverPresence = onCall(
     }
 
     const existing = snap.data() || {};
+    if (online) {
+      requireApprovedDriver(existing);
+    }
+
     const update = {
       role: 'driver',
       online,
@@ -124,10 +136,7 @@ exports.setDriverPresence = onCall(
     if (online) {
       update.onlineSince = FieldValue.serverTimestamp();
     } else if (existing.onlineSince?.toDate) {
-      const seconds = Math.max(
-        0,
-        Math.floor((Date.now() - existing.onlineSince.toDate().getTime()) / 1000),
-      );
+      const seconds = Math.max(0, Math.floor((Date.now() - existing.onlineSince.toDate().getTime()) / 1000));
       update.totalOnlineSeconds = Number(existing.totalOnlineSeconds || 0) + seconds;
       update.onlineSince = null;
     }
@@ -161,6 +170,9 @@ exports.updateDriverLocation = onCall(
       throw new HttpsError('failed-precondition', 'Partner must be online to share location.');
     }
 
+    const partnerData = partnerSnap.data() || {};
+    requireApprovedDriver(partnerData);
+
     await partnerRef.set(
       {
         latitude,
@@ -173,7 +185,6 @@ exports.updateDriverLocation = onCall(
       { merge: true },
     );
 
-    // Keep live location scoped to the driver's assigned bookings.
     const activeBookings = await db.collection('bookings')
       .where('partnerId', '==', uid)
       .where('status', 'in', ['ACCEPTED', 'ARRIVING', 'ARRIVED', 'TRIP_STARTED'])
@@ -215,9 +226,9 @@ exports.acceptBooking = onCall(
     if (!partnerSnap.exists || partnerSnap.data()?.online !== true) {
       throw new HttpsError('failed-precondition', 'Go online before accepting a booking.');
     }
+    requireApprovedDriver(partnerSnap.data() || {});
 
     const bookingRef = db.collection('bookings').doc(bookingId);
-
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(bookingRef);
       if (!snap.exists) {
@@ -236,16 +247,12 @@ exports.acceptBooking = onCall(
         throw new HttpsError('failed-precondition', 'This booking is no longer available.');
       }
 
-      tx.set(
-        bookingRef,
-        {
-          status: 'ACCEPTED',
-          partnerId: uid,
-          acceptedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
+      tx.set(bookingRef, {
+        status: 'ACCEPTED',
+        partnerId: uid,
+        acceptedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
     });
 
     return { ok: true, bookingId, status: 'ACCEPTED' };
@@ -297,6 +304,7 @@ exports.transitionBooking = onCall(
     const uid = requireDriver(request);
     const bookingId = String(request.data?.bookingId || '').trim();
     const nextStatus = String(request.data?.status || '').trim().toUpperCase();
+    const providedOtp = String(request.data?.otp || request.data?.startOtp || '').trim();
 
     if (!bookingId) {
       throw new HttpsError('invalid-argument', 'Booking ID is required.');
@@ -342,8 +350,18 @@ exports.transitionBooking = onCall(
         if (required.some((field) => typeof request.data?.[field] !== 'string' || !request.data[field].trim())) {
           throw new HttpsError('invalid-argument', 'All pre-trip inspection photos are required.');
         }
+
+        const expectedOtp = String(data.otp || data.startOtp || '').trim();
+        if (!expectedOtp) {
+          throw new HttpsError('failed-precondition', 'Trip start OTP is not available for this booking.');
+        }
+        if (providedOtp !== expectedOtp) {
+          throw new HttpsError('permission-denied', 'Invalid trip start OTP.');
+        }
+
         for (const field of required) update[field] = request.data[field].trim();
         update.startedAt = FieldValue.serverTimestamp();
+        update.otpVerifiedAt = FieldValue.serverTimestamp();
       }
 
       if (nextStatus === 'COMPLETED') {
