@@ -23,7 +23,7 @@ service cloud.firestore {
     }
 
     match /partners/{partnerId} {
-      allow read: if isDriver() && request.auth.uid == partnerId;
+      allow read: if signedIn() && request.auth.uid == partnerId;
       allow create: if false;
       allow update: if isDriver()
         && request.auth.uid == partnerId
@@ -38,8 +38,14 @@ service cloud.firestore {
           'ifscCode',
           'accountHolder',
           'bankUpdatedTime',
+          'licenseDocumentUrl',
+          'licenseDocumentStatus',
+          'governmentIdDocumentUrl',
+          'governmentIdDocumentStatus',
           'updatedAt'
-        ]);
+        ])
+        && (!('licenseDocumentStatus' in request.resource.data) || request.resource.data.licenseDocumentStatus in ['SUBMITTED', 'REUPLOAD_REQUIRED', 'Approved', 'APPROVED'])
+        && (!('governmentIdDocumentStatus' in request.resource.data) || request.resource.data.governmentIdDocumentStatus in ['SUBMITTED', 'REUPLOAD_REQUIRED', 'Approved', 'APPROVED']);
       allow delete: if false;
 
       match /earnings/{earningId} {
