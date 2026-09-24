@@ -43,8 +43,7 @@ class PushNotificationService {
       _registerToken(token);
     });
 
-    _authSubscription =
-        FirebaseAuth.instance.authStateChanges().listen((_) {
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((_) {
       _registerToken();
     });
   }
@@ -63,6 +62,18 @@ class PushNotificationService {
     } catch (_) {
       // Role claims may still be refreshing immediately after login.
       // Token refresh/auth changes will retry registration.
+    }
+  }
+
+  Future<void> setRideRequestsSubscription(bool enabled) async {
+    try {
+      if (enabled) {
+        await _messaging.subscribeToTopic('ride_requests');
+      } else {
+        await _messaging.unsubscribeFromTopic('ride_requests');
+      }
+    } catch (_) {
+      // Topic subscriptions are best-effort.
     }
   }
 
