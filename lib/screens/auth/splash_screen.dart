@@ -1,8 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../home/home_screen.dart';
+import '../profile/verification_screen.dart';
 import 'login_screen.dart';
+import 'payment_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -28,11 +31,42 @@ class _SplashScreenState extends State<SplashScreen> {
     _navigationStarted = true;
 
     final user = FirebaseAuth.instance.currentUser;
-    final targetScreen = user != null ? const HomeScreen() : const LoginScreen();
+    if (user == null) {
+      _goTo(const LoginScreen());
+      return;
+    }
 
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('partners')
+          .doc(user.uid)
+          .get()
+          .timeout(const Duration(seconds: 4));
+
+      final data = doc.data() ?? <String, dynamic>{};
+      final paid = data['registrationFeePaid'] == true;
+      final verification = (data['verificationStatus'] ?? '').toString().toUpperCase();
+      final approved = verification == 'VERIFIED' ||
+          verification == 'APPROVED' ||
+          data['driverApproved'] == true ||
+          data['onboardingStatus'] == 'APPROVED';
+
+      if (!paid) {
+        _goTo(const PaymentScreen());
+      } else if (!approved) {
+        _goTo(const VerificationScreen());
+      } else {
+        _goTo(const HomeScreen());
+      }
+    } catch (_) {
+      _goTo(const HomeScreen());
+    }
+  }
+
+  void _goTo(Widget target) {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => targetScreen),
+      MaterialPageRoute(builder: (_) => target),
     );
   }
 
