@@ -50,13 +50,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
     }
   }
 
-  Future<void> _processRegistrationFeePayment() async {
-    if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const PaymentScreen()),
-    );
-  }
-
 
   void _showPaymentSheet(BuildContext context) {
     Navigator.of(context).push(
@@ -77,7 +70,6 @@ class _VerificationScreenState extends State<VerificationScreen> {
       );
       if (image == null) return;
 
-      final file = XFile(image.path);
       final ref = FirebaseStorage.instance
           .ref()
           .child('verification')
@@ -264,6 +256,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
             'Profile Photo',
             selfieStatus,
             Icons.photo_camera_outlined,
+            'profile_photo',
           ),
         ],
       ),
