@@ -263,7 +263,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       const SizedBox(height: 18),
                       const Text(
-                        'WE DRIVE',
+                        'WeDrive247',
                         style: TextStyle(
                           color: AppColors.navy,
                           fontSize: 26,
