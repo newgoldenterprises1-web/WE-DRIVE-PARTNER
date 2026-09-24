@@ -4,6 +4,8 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'push_notification_service.dart';
+
 /// Production partner presence/location service.
 ///
 /// The UI stays unchanged. Location is pushed to Firebase immediately from
@@ -30,9 +32,11 @@ class PartnerPresenceService {
       await _functions.httpsCallable('setDriverPresence').call({
         'online': true,
       });
+      await PushNotificationService.instance.setRideRequestsSubscription(true);
       await startLiveLocation();
     } else {
       await stopLiveLocation();
+      await PushNotificationService.instance.setRideRequestsSubscription(false);
       await _functions.httpsCallable('setDriverPresence').call({
         'online': false,
       });
