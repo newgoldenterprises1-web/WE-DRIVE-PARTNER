@@ -1,11 +1,11 @@
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
-const { initializeApp } = require('firebase-admin/app');
+const { getApps, initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { sendPushToUser } = require('./notifications_backend');
 
-initializeApp();
+if (!getApps().length) initializeApp();
 
 const auth = getAuth();
 const db = getFirestore();
@@ -47,6 +47,18 @@ function requireApprovedDriver(data) {
   if (!isApprovedDriverProfile(data)) {
     throw new HttpsError('failed-precondition', 'Partner account is pending approval.');
   }
+}
+
+function distanceKm(lat1, lng1, lat2, lng2) {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 async function dispatchBookingOffers(bookingId, bookingData) {
