@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../data/app_data.dart';
 import '../../models/booking.dart';
 import '../../services/partner_presence_service.dart';
+import '../../services/push_notification_service.dart';
 import '../../theme/app_theme.dart';
 import '../account/account_screen.dart';
 import '../bookings/booking_detail_screen.dart';
@@ -41,6 +42,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
       setState(() {
         partnerData = doc.data() ?? {};
         online = partnerData['online'] == true;
+        PushNotificationService.instance.setRideRequestsSubscription(online);
       });
     } catch (_) {}
   }
@@ -53,6 +55,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
     });
     try {
       await PartnerPresenceService.instance.setOnline(value);
+      await PushNotificationService.instance.setRideRequestsSubscription(value);
       await _loadPartner();
     } catch (e) {
       if (mounted) {
@@ -168,7 +171,7 @@ class _HomeScreenV2State extends State<HomeScreenV2> {
                           child: const Icon(Icons.local_taxi_rounded, color: AppColors.navy, size: 20),
                         ),
                         const SizedBox(width: 10),
-                        const Text('WE DRIVE', style: TextStyle(color: AppColors.navy, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
+                        const Text('WeDrive247', style: TextStyle(color: AppColors.navy, fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: 1.2)),
                       ],
                     ),
                   ),
