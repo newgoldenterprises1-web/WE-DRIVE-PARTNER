@@ -64,7 +64,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Text(
-                    'WE DRIVE',
+                    'WeDrive247',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 36,
