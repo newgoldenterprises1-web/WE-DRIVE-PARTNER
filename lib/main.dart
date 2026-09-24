@@ -21,6 +21,9 @@ void main() async {
   await PushNotificationService.instance.initialize();
 
   runApp(const MyApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    PushNotificationService.instance.flushPendingNotification();
+  });
 }
 
 class MyApp extends StatelessWidget {
