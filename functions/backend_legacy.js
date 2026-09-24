@@ -3,6 +3,7 @@ const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
+const { sendPushToUser } = require('./notifications_backend');
 
 initializeApp();
 
@@ -46,6 +47,133 @@ function requireApprovedDriver(data) {
   if (!isApprovedDriverProfile(data)) {
     throw new HttpsError('failed-precondition', 'Partner account is pending approval.');
   }
+}
+
+async function dispatchBookingOffers(bookingId, bookingData) {
+  const pickupLat = Number(bookingData.pickupLatitude);
+  const pickupLng = Number(bookingData.pickupLongitude);
+  const declinedBy = Array.isArray(bookingData.declinedBy) ? bookingData.declinedBy : [];
+  const preferences = bookingData.requestPreferences || {};
+  const preferredId = String(preferences.preferredChauffeurId || '').trim();
+
+  const partnerSnap = await db.collection('partners')
+    .where('online', '==', true)
+    .limit(100)
+    .get();
+
+  const ranked = [];
+
+  for (const doc of partnerSnap.docs) {
+    const partner = doc.data() || {};
+    const uid = doc.id;
+
+    if (declinedBy.includes(uid) || !isApprovedDriverProfile(partner)) continue;
+
+    const partnerLat = Number(partner.latitude);
+    const partnerLng = Number(partner.longitude);
+    let distance = null;
+
+    if (
+      Number.isFinite(pickupLat) &&
+      Number.isFinite(pickupLng) &&
+      Number.isFinite(partnerLat) &&
+      Number.isFinite(partnerLng)
+    ) {
+      distance = distanceKm(pickupLat, pickupLng, partnerLat, partnerLng);
+    }
+
+    const rating = Math.max(0, Math.min(5, Number(partner.rating || 5)));
+    const punctuality = Math.max(0, Math.min(100, Number(partner.punctualityScore ?? 95)));
+    const experience = Math.max(
+      0,
+      Number(partner.experienceYears ?? partner.experience ?? 0),
+    );
+
+    let score = rating * 15;
+    score += Math.min(15, punctuality / 7);
+    score += Math.min(15, experience * 2);
+    score += distance == null ? 5 : Math.max(0, 35 - distance * 4);
+    if (preferredId === uid) score += 30;
+
+    ranked.push({
+      uid,
+      name: partner.name || partner.fullName || 'WE DRIVE Chauffeur',
+      rating,
+      experience,
+      punctuality,
+      distance,
+      score: Math.round(score),
+    });
+  }
+
+  ranked.sort((a, b) => b.score - a.score);
+  const selected = ranked.slice(0, 5);
+
+  if (!selected.length) {
+    await db.collection('bookings').doc(bookingId).set(
+      {
+        matchStatus: 'WAITING',
+        candidatePartnerIds: [],
+        matchCandidates: [],
+        lastMatchAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    return [];
+  }
+
+  const candidateIds = selected.map((candidate) => candidate.uid);
+
+  await db.collection('bookings').doc(bookingId).set(
+    {
+      status: 'SEARCHING',
+      bookingStatus: 'SEARCHING',
+      matchStatus: 'SEARCHING',
+      candidatePartnerIds: candidateIds,
+      matchCandidates: selected.map((candidate) => ({
+        partnerId: candidate.uid,
+        name: candidate.name,
+        rating: candidate.rating,
+        experience: candidate.experience,
+        punctuality: candidate.punctuality,
+        distanceKm: candidate.distance,
+        score: candidate.score,
+      })),
+      lastMatchAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  await Promise.all(selected.map(async (candidate) => {
+    const message = 'New chauffeur request near ' +
+      String(bookingData.pickupLocation || 'pickup') +
+      '. Review and accept it in your WE DRIVE Partner app.';
+
+    await db.collection('notifications').add({
+      userId: candidate.uid,
+      type: 'booking_request',
+      title: 'New chauffeur request',
+      message,
+      bookingId,
+      read: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    await sendPushToUser(candidate.uid, {
+      title: 'New chauffeur request',
+      body: message,
+      role: 'driver',
+      data: {
+        type: 'booking_request',
+        bookingId,
+        pickupLocation: bookingData.pickupLocation || '',
+      },
+    });
+  }));
+
+  return candidateIds;
 }
 
 exports.ensureDriverAccount = onCall(
@@ -142,6 +270,20 @@ exports.setDriverPresence = onCall(
     }
 
     await ref.set(update, { merge: true });
+
+    if (online) {
+      const openBookings = await db.collection('bookings')
+        .where('status', 'in', ['REQUESTED', 'SEARCHING'])
+        .limit(50)
+        .get();
+
+      await Promise.all(
+        openBookings.docs
+          .filter((doc) => !doc.data()?.partnerId)
+          .map((doc) => dispatchBookingOffers(doc.id, doc.data() || {})),
+      );
+    }
+
     return { ok: true, online };
   },
 );
@@ -247,10 +389,22 @@ exports.acceptBooking = onCall(
         throw new HttpsError('failed-precondition', 'This booking is no longer available.');
       }
 
+      const candidatePartnerIds = Array.isArray(data.candidatePartnerIds)
+          ? data.candidatePartnerIds
+          : [];
+      if (candidatePartnerIds.length && !candidatePartnerIds.includes(uid)) {
+        throw new HttpsError(
+          'permission-denied',
+          'This booking is currently being offered to another matched chauffeur.',
+        );
+      }
+
       tx.set(bookingRef, {
         status: 'ACCEPTED',
+        bookingStatus: 'ACCEPTED',
         partnerId: uid,
         acceptedAt: FieldValue.serverTimestamp(),
+        matchStatus: 'MATCHED',
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
     });
@@ -388,25 +542,78 @@ exports.onBookingWritten = onDocumentWritten(
     if (!after) return;
 
     const bookingId = event.params.bookingId;
-    const partnerId = String(after.partnerId || '').trim();
-    if (!partnerId) return;
-
     const beforeStatus = String(before?.status || '').toUpperCase();
     const afterStatus = String(after.status || '').toUpperCase();
+    const partnerId = String(after.partnerId || '').trim();
 
-    if (afterStatus === 'ACCEPTED' && beforeStatus !== 'ACCEPTED') {
+    if (
+      !partnerId &&
+      ['REQUESTED', 'SEARCHING'].includes(afterStatus) &&
+      String(after.matchStatus || '').toUpperCase() !== 'NO_DRIVER'
+    ) {
+      const beforeDeclined = Array.isArray(before?.declinedBy) ? before.declinedBy : [];
+      const afterDeclined = Array.isArray(after.declinedBy) ? after.declinedBy : [];
+      const hasCandidates = Array.isArray(after.candidatePartnerIds) &&
+        after.candidatePartnerIds.length > 0;
+      const newBooking = !before;
+      const declinedChanged = afterDeclined.length !== beforeDeclined.length;
+      const needsInitialDispatch =
+        newBooking ||
+        declinedChanged ||
+        (!hasCandidates && String(after.matchStatus || '').toUpperCase() === 'WAITING') ||
+        (afterStatus === 'REQUESTED' && beforeStatus !== 'SEARCHING');
+
+      if (needsInitialDispatch) {
+        await dispatchBookingOffers(bookingId, after);
+      }
+    }
+
+    if (afterStatus === 'ACCEPTED' && beforeStatus !== 'ACCEPTED' && partnerId) {
       await db.collection('notifications').add({
         userId: partnerId,
         type: 'booking',
         title: 'Booking accepted',
-        message: `Booking ${bookingId} has been assigned to you.`,
+        message: 'Booking ' + bookingId + ' has been assigned to you.',
         bookingId,
         read: false,
         createdAt: FieldValue.serverTimestamp(),
       });
+
+      await sendPushToUser(partnerId, {
+        title: 'Booking accepted',
+        body: 'Booking ' + bookingId + ' has been assigned to you.',
+        role: 'driver',
+        data: {
+          type: 'booking_accepted',
+          bookingId,
+        },
+      });
+
+      const customerId = String(after.customerId || '').trim();
+      if (customerId) {
+        await db.collection('notifications').add({
+          userId: customerId,
+          type: 'booking',
+          title: 'Chauffeur matched',
+          message: (after.driverName || 'Your chauffeur') + ' has accepted your WE DRIVE booking.',
+          bookingId,
+          read: false,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+
+        await sendPushToUser(customerId, {
+          title: 'Chauffeur matched',
+          body: (after.driverName || 'Your chauffeur') + ' has accepted your WE DRIVE booking.',
+          role: 'customer',
+          data: {
+            type: 'chauffeur_matched',
+            bookingId,
+          },
+        });
+      }
     }
 
-    if (afterStatus === 'COMPLETED' && beforeStatus !== 'COMPLETED') {
+    if (afterStatus === 'COMPLETED' && beforeStatus !== 'COMPLETED' && partnerId) {
       const fare = Math.max(0, Number(after.fare || 0));
       const share = Math.min(100, Math.max(0, Number(after.partnerSharePercent ?? 85)));
       const earnings = Math.max(0, Math.round((fare * share) / 100));
@@ -427,11 +634,34 @@ exports.onBookingWritten = onDocumentWritten(
         userId: partnerId,
         type: 'earning',
         title: 'Trip completed',
-        message: `₹${earnings} has been added to your earnings ledger.`,
+        message: '₹' + earnings + ' has been added to your earnings ledger.',
         bookingId,
         read: false,
         createdAt: FieldValue.serverTimestamp(),
       });
+
+      await sendPushToUser(partnerId, {
+        title: 'Trip completed',
+        body: '₹' + earnings + ' has been added to your earnings ledger.',
+        role: 'driver',
+        data: {
+          type: 'trip_completed',
+          bookingId,
+        },
+      });
+
+      const customerId = String(after.customerId || '').trim();
+      if (customerId) {
+        await sendPushToUser(customerId, {
+          title: 'Trip completed',
+          body: 'Your WE DRIVE trip is complete. Your receipt is ready in the app.',
+          role: 'customer',
+          data: {
+            type: 'trip_completed',
+            bookingId,
+          },
+        });
+      }
     }
   },
 );
