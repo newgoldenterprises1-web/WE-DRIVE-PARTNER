@@ -29,9 +29,6 @@ class PushNotificationService {
       provisional: false,
     );
 
-    final token = await _messaging.getToken();
-    if (token != null) await _register(token);
-
     _messaging.onTokenRefresh.listen((token) async {
       await _register(token);
     });
@@ -46,6 +43,12 @@ class PushNotificationService {
         await HapticFeedback.heavyImpact();
       } catch (_) {}
     });
+    await _registerCurrentToken();
+  }
+
+  Future<void> _registerCurrentToken() async {
+    final token = await _messaging.getToken();
+    if (token != null) await _register(token);
   }
 
   Future<void> _register(String token) async {
