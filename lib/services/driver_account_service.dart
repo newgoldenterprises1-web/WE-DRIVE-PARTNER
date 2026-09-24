@@ -12,7 +12,7 @@ class DriverAccountService {
   final FirebaseFunctions _functions =
       FirebaseFunctions.instanceFor(region: 'asia-south1');
 
-  Future<void> ensureDriverAccount({String? name}) async {
+  Future<void> ensureDriverAccount({String? name, bool registration = false}) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       throw StateError('Partner session is not available.');
@@ -22,6 +22,7 @@ class DriverAccountService {
     await callable.call(<String, dynamic>{
       'name': (name ?? '').trim(),
       'phoneNumber': user.phoneNumber,
+      'mode': registration ? 'register' : 'login',
     });
 
     await user.getIdToken(true);
