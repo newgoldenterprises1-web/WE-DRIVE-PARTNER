@@ -305,12 +305,21 @@ exports.razorpayWebhook = onRequest(
             const bookingDoc = lookup.docs[0];
             const booking = bookingDoc.data() || {};
             if (booking.status === 'PAYMENT_PENDING') {
-              await finalizeCustomerPayment({
-                uid: String(booking.customerId || ''),
+              await bookingDoc.ref.set({
+                paymentStatus: 'paid',
+                razorpayOrderId: orderId,
+                razorpayPaymentId: paymentId,
+                paymentWebhookVerifiedAt: FieldValue.serverTimestamp(),
+                status: 'REQUESTED',
+                bookingStatus: 'REQUESTED',
+                matchStatus: 'WAITING',
+                updatedAt: FieldValue.serverTimestamp(),
+              }, { merge: true });
+
+              await notifyAvailableDrivers({
                 bookingId: bookingDoc.id,
-                orderId,
-                paymentId,
-                signature,
+                title: 'New chauffeur booking',
+                message: 'A customer booking is available. Open WE DRIVE Partner to respond.',
               });
             }
           }
