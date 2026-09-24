@@ -29,6 +29,7 @@ class PushNotificationService {
   StreamSubscription<RemoteMessage>? _openedSubscription;
 
   bool _initialized = false;
+  RemoteMessage? _pendingOpenedMessage;
 
   Future<void> initialize() async {
     if (_initialized) return;
@@ -67,7 +68,7 @@ class PushNotificationService {
 
     final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
-      _handleNotificationOpen(initialMessage);
+      _pendingOpenedMessage = initialMessage;
     }
   }
 
@@ -129,6 +130,14 @@ class PushNotificationService {
           ),
         ),
       );
+  }
+
+  void flushPendingNotification() {
+    final message = _pendingOpenedMessage;
+    _pendingOpenedMessage = null;
+    if (message != null) {
+      _handleNotificationOpen(message);
+    }
   }
 
   void _handleNotificationOpen(RemoteMessage message) {
