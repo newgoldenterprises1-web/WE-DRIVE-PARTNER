@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
+import '../../services/payout_service.dart';
 
 class EarningsScreen extends StatefulWidget {
   const EarningsScreen({super.key});
@@ -73,20 +74,36 @@ class _EarningsScreenState extends State<EarningsScreen> {
     return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
   }
 
-  void _selectFrequency(String value) {
-    setState(() => payoutFrequency = value);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Payout preference selected: ${value[0].toUpperCase()}${value.substring(1)}')),
-    );
+  Future<void> _selectFrequency(String value) async {
+    if (value != 'daily' && value != 'weekly') return;
+    try {
+      final saved = await PayoutService.instance.setFrequency(value);
+      if (!mounted) return;
+      setState(() => payoutFrequency = saved);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Payout preference saved: ' + saved[0].toUpperCase() + saved.substring(1))),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+      );
+    }
   }
 
-  void _withdraw() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Bank withdrawal will be enabled after RazorpayX KYC is completed.'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  Future<void> _withdraw() async {
+    try {
+      final result = await PayoutService.instance.withdraw();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result['message']?.toString() ?? 'Payout request submitted.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+      );
+    }
   }
 
   @override
