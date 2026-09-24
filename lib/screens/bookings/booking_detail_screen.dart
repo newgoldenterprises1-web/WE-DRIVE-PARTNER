@@ -177,10 +177,89 @@ class _BookingDetailScreenState extends State<BookingDetailScreen> {
     await _functions.httpsCallable('declineBooking').call({'bookingId': widget.booking.id});
   }
 
+  Future<void> _verifyTripStartOtp() async {
+    final controller = TextEditingController();
+    bool verifying = false;
+
+    final verified = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Enter Customer Start OTP'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Ask the customer for the 4-digit OTP shown in their WE DRIVE app.'),
+              const SizedBox(height: 14),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                textAlign: TextAlign.center,
+                decoration: const InputDecoration(
+                  labelText: '4-digit OTP',
+                  counterText: '',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: verifying ? null : () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: verifying
+                  ? null
+                  : () async {
+                      final otp = controller.text.trim();
+                      if (!RegExp(r'^\d{4}$').hasMatch(otp)) {
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          const SnackBar(content: Text('Enter a valid 4-digit OTP.'), backgroundColor: Colors.red),
+                        );
+                        return;
+                      }
+
+                      setDialogState(() => verifying = true);
+                      try {
+                        await _functions.httpsCallable('verifyTripStartOtp').call({
+                          'bookingId': widget.booking.id,
+                          'otp': otp,
+                        });
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop(true);
+                        }
+                      } catch (error) {
+                        setDialogState(() => verifying = false);
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(content: Text(error.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    },
+              child: verifying
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('VERIFY OTP'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    controller.dispose();
+    if (verified != true) {
+      throw StateError('Trip start cancelled because the customer OTP was not verified.');
+    }
+  }
+
   Future<void> _transitionBooking(String nextStatus) async {
     final payload = <String, dynamic>{'bookingId': widget.booking.id, 'status': nextStatus};
 
     if (nextStatus == 'TRIP_STARTED') {
+      await _verifyTripStartOtp();
       if (!areAllPreTripPhotosCaptured) throw StateError('Please capture all pre-trip photos first.');
       final uploads = await Future.wait([
         _uploadImageToStorageWithRetry(preTripFront!, 'pre_trip'),
