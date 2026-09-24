@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
@@ -40,7 +41,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
             isPaid = data['registrationFeePaid'] ?? false;
             verificationStatus = data['verificationStatus'] ?? 'PENDING';
             dlStatus = data['licenseDocumentStatus'] ?? data['dlStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
-            idStatus = data['government_idDocumentStatus'] ?? data['governmentIdStatus'] ?? data['idStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
+            idStatus = data['governmentIdDocumentStatus'] ?? data['governmentIdDocumentStatus'] ?? data['governmentIdStatus'] ?? data['idStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
           });
         }
       }
@@ -83,10 +84,10 @@ class _VerificationScreenState extends State<VerificationScreen> {
           .child(user.uid)
           .child(type + '.jpg');
 
-      await ref.putFile(await file.readAsBytes().then((bytes) => File(image.path)));
+      await ref.putFile(File(image.path));
       final url = await ref.getDownloadURL();
 
-      final fieldPrefix = type == 'driving_license' ? 'license' : 'government_id';
+      final fieldPrefix = type == 'driving_license' ? 'license' : 'governmentId';
       await FirebaseFirestore.instance.collection('partners').doc(user.uid).set({
         fieldPrefix + 'DocumentUrl': url,
         fieldPrefix + 'DocumentStatus': 'SUBMITTED',
@@ -202,8 +203,8 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 Expanded(
                   child: Text(
                     isPaid
-                        ? 'FEE PAID (₹399) — Your account is under verification.'
-                        : 'PAY REGISTRATION FEE — Complete ₹399 payment to submit documents.',
+                        ? 'FEE PAID (₹299) — Your account is under verification.'
+                        : 'PAY REGISTRATION FEE — Complete ₹299 payment to submit documents.',
                     style: const TextStyle(
                       color: AppColors.navy,
                       fontWeight: FontWeight.w800,
@@ -231,7 +232,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
                 onPressed: isProcessing ? null : () => _showPaymentSheet(context),
                 child: isProcessing
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('PAY REGISTRATION FEE (₹399)', style: TextStyle(fontWeight: FontWeight.w900)),
+                    : const Text('PAY REGISTRATION FEE (₹299)', style: TextStyle(fontWeight: FontWeight.w900)),
               ),
             ),
             const SizedBox(height: 18),
