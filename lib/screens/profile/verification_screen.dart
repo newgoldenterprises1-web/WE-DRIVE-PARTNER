@@ -40,7 +40,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
           setState(() {
             isPaid = data['registrationFeePaid'] ?? false;
             verificationStatus = data['verificationStatus'] ?? 'PENDING';
-            dlStatus = data['licenseDocumentStatus'] ?? data['dlStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
+            dlStatus = data['licenseDocumentStatus'] ?? data['dlStatus'] ?? (isPaid ? 'Pending' : 'Payment Required');
             idStatus = data['governmentIdDocumentStatus'] ?? data['governmentIdDocumentStatus'] ?? data['governmentIdStatus'] ?? data['idStatus'] ?? (isPaid ? 'Pending Review' : 'Payment Required');
           });
         }
@@ -135,7 +135,7 @@ class _VerificationScreenState extends State<VerificationScreen> {
             ),
             if (uploadingDocument == type)
               const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2))
-            else if (status == 'Pending' || status == 'Payment Required')
+            else if (status == 'Pending' || status == 'Pending Review' || status == 'REUPLOAD_REQUIRED' || status == 'Payment Required')
               IconButton(
                 tooltip: 'Upload',
                 onPressed: () => _uploadDocument(type),
