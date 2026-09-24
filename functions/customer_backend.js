@@ -101,6 +101,9 @@ exports.createCustomerBooking = onCall(
     const preferences = input.requestPreferences || {};
     const bookingRef = db.collection('bookings').doc();
 
+    const paymentMethod = optionalString(input.paymentMethod, 24) || 'Cash';
+    const paymentStatus = optionalString(input.paymentStatus, 24) || 'pending';
+
     const data = {
       bookingId: bookingRef.id,
       customerId: uid,
@@ -122,8 +125,8 @@ exports.createCustomerBooking = onCall(
       selectedHours: input.selectedHours == null ? null : Number(input.selectedHours),
       fare,
       currency: 'INR',
-      paymentMethod: 'Cash',
-      paymentStatus: 'pending',
+      paymentMethod,
+      paymentStatus,
       status: 'REQUESTED',
       bookingStatus: 'REQUESTED',
       partnerId: null,
@@ -217,9 +220,6 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
 
     const partnerSnap = await db.collection('partners').doc(partnerId).get();
     const partner = partnerSnap.data() || {};
-
-
-
     const prefs = after.requestPreferences || {};
 
     const driverRating = Number(partner.rating || 5);
@@ -228,7 +228,7 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
     const punctuality = Number(partner.punctualityScore ?? partner.punctuality ?? 95);
     const verified = partner.verified === true || partner.verificationStatus === 'VERIFIED';
     const distance = Number.isFinite(Number(after.pickupLatitude)) && Number.isFinite(Number(after.pickupLongitude)) &&
-        Number.isFinite(Number(partner.latitude)) && Number.isFinite(Number(partner.longitude))
+      Number.isFinite(Number(partner.latitude)) && Number.isFinite(Number(partner.longitude))
       ? distanceKm(Number(after.pickupLatitude), Number(after.pickupLongitude), Number(partner.latitude), Number(partner.longitude))
       : null;
 
