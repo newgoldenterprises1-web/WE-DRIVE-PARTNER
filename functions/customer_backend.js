@@ -1,3 +1,4 @@
+const { randomInt } = require('crypto');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { getApps, initializeApp } = require('firebase-admin/app');
@@ -276,7 +277,7 @@ exports.enrichCustomerBookingOnAssign = onDocumentWritten(
       number: partner.vehicleNumber || partner.registrationNumber || null,
     };
 
-    const otp = String(Math.floor(1000 + Math.random() * 9000));
+    const otp = String(randomInt(1000, 10000));
     await event.data.after.ref.set({
       driverId: partnerId,
       driverName: partner.name || partner.fullName || 'WE DRIVE Chauffeur',
